@@ -253,6 +253,13 @@ def run(args: argparse.Namespace) -> None:
     model = AutoModelForImageTextToText.from_pretrained(
         args.qwen_model,
         trust_remote_code=True,
+        dtype=torch.float16,
+        device_map=args.qwen_device_map,
+    )
+    model.eval()
+    if hasattr(model, "generation_config"):
+        # Disable KV cache by default for memory stability on near-full VRAM setups.
+        model.generation_config.use_cache = args.qwen_use_cache
         torch_dtype=torch.float16,
         device_map=args.qwen_device_map,
     )
@@ -291,6 +298,16 @@ def run(args: argparse.Namespace) -> None:
                 inputs = processor(text=prompts, images=images, padding=True, return_tensors="pt")
                 inputs = {k: v.to(input_device) if hasattr(v, "to") else v for k, v in inputs.items()}
 
+                gen_kwargs: dict[str, Any] = {
+                    "max_new_tokens": args.qwen_max_new_tokens,
+                    "do_sample": args.qwen_temperature > 0,
+                }
+                if gen_kwargs["do_sample"]:
+                    gen_kwargs["temperature"] = args.qwen_temperature
+                    gen_kwargs["top_p"] = args.qwen_top_p
+
+                with torch.inference_mode():
+                    generated = model.generate(**inputs, **gen_kwargs)
                 with torch.inference_mode():
                     generated = model.generate(
                         **inputs,
@@ -319,6 +336,23 @@ def run(args: argparse.Namespace) -> None:
                 break
 
             except RuntimeError as err:
+                err_text = str(err).lower()
+                if "out of memory" in err_text and current_batch > 1:
+                    logging.warning("OOM at batch=%d. Retrying with half batch.", current_batch)
+                    current_batch = max(1, current_batch // 2)
+                    continue
+
+                if "cuda driver error: invalid argument" in err_text and args.qwen_max_new_tokens > 64:
+                    new_tokens = max(64, args.qwen_max_new_tokens // 2)
+                    logging.warning(
+                        "CUDA invalid argument during generate. Retrying sample with fewer max_new_tokens: %d -> %d",
+                        args.qwen_max_new_tokens,
+                        new_tokens,
+                    )
+                    args.qwen_max_new_tokens = new_tokens
+                    continue
+
+                raise
                 if "out of memory" not in str(err).lower() or current_batch == 1:
                     raise
                 logging.warning("OOM at batch=%d. Retrying with half batch.", current_batch)
@@ -348,6 +382,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--qwen-temperature", type=float, default=0.0)
     p.add_argument("--qwen-top-p", type=float, default=1.0)
     p.add_argument("--qwen-use-fast-processor", action="store_true")
+    p.add_argument("--qwen-use-cache", action="store_true", help="Enable generation KV cache (disabled by default for stability).")
 
     p.add_argument("--test", action="store_true")
     p.add_argument("--test-samples", type=int, default=10)

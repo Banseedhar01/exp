@@ -122,3 +122,13 @@ python -u annotate_amex_qwen.py \
 - Start with `--qwen-batch-size 1`, then increase gradually.
 - Keep `--qwen-max-edge` at 1024 (or lower) if VRAM is tight.
 - Use `--qwen-temperature 0.0` for deterministic labels.
+
+## Troubleshooting
+
+- If startup seems stuck after `[startup]`, it is usually model shard loading for 30B checkpoints from storage; wait for `Loading checkpoint shards` and then `[model_loaded]`.
+- If you hit `RuntimeError: CUDA driver error: invalid argument` during generation:
+  - keep `--qwen-batch-size 1`
+  - reduce `--qwen-max-new-tokens` (e.g., 512 -> 256 -> 128)
+  - keep `--qwen-max-edge 1024` or lower
+  - avoid sampling (`--qwen-temperature 0.0`) unless needed
+- The script now retries invalid-argument generation once by reducing `max_new_tokens` automatically.
