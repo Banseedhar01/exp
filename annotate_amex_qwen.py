@@ -260,6 +260,10 @@ def run(args: argparse.Namespace) -> None:
     if hasattr(model, "generation_config"):
         # Disable KV cache by default for memory stability on near-full VRAM setups.
         model.generation_config.use_cache = args.qwen_use_cache
+        torch_dtype=torch.float16,
+        device_map=args.qwen_device_map,
+    )
+    model.eval()
 
     input_device = resolve_input_device(model)
     logging.info("Resolved model input device: %s", input_device)
@@ -304,6 +308,14 @@ def run(args: argparse.Namespace) -> None:
 
                 with torch.inference_mode():
                     generated = model.generate(**inputs, **gen_kwargs)
+                with torch.inference_mode():
+                    generated = model.generate(
+                        **inputs,
+                        max_new_tokens=args.qwen_max_new_tokens,
+                        do_sample=args.qwen_temperature > 0,
+                        temperature=args.qwen_temperature,
+                        top_p=args.qwen_top_p,
+                    )
 
                 in_lens = inputs["attention_mask"].sum(dim=-1).tolist()
                 generated_only = [seq[int(in_len) :] for seq, in_len in zip(generated, in_lens)]
@@ -341,6 +353,10 @@ def run(args: argparse.Namespace) -> None:
                     continue
 
                 raise
+                if "out of memory" not in str(err).lower() or current_batch == 1:
+                    raise
+                logging.warning("OOM at batch=%d. Retrying with half batch.", current_batch)
+                current_batch = max(1, current_batch // 2)
             finally:
                 for im in images:
                     im.close()
