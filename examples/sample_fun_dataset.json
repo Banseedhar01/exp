@@ -1,0 +1,17 @@
+[
+    {
+        "image": "screenshot1.png",
+        "prefix": "<FUN>\n<CMD> Subscribe to the podcast",
+        "suffix": "<loc_756><loc_467><loc_981><loc_507>"
+    },
+    {
+        "image": "screenshot2.png",
+        "prefix": "<FUN>\n<CMD> Click the login button",
+        "suffix": "<loc_100><loc_200><loc_300><loc_250>"
+    },
+    {
+        "image": "screenshot3.png",
+        "prefix": "<FUN>\n<CMD> Open the settings menu",
+        "suffix": "<loc_50><loc_50><loc_150><loc_100>"
+    }
+]

@@ -1,0 +1,5 @@
+{
+    "image": "sample3.png",
+    "prefix": "<FUN>\n<COMMAND> Navigate to home page",
+    "suffix": "<loc_200><loc_300><loc_400><loc_350>"
+}

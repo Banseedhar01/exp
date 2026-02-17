@@ -1,0 +1,17 @@
+[
+    {
+        "prefix": "<OD>",
+        "suffix": "button<loc_100><loc_200><loc_300><loc_250>",
+        "image": "sample1.png"
+    },
+    {
+        "prefix": "<OD>",
+        "suffix": "text<loc_50><loc_100><loc_250><loc_150>icon<loc_300><loc_100><loc_350><loc_150>",
+        "image": "sample2.png"
+    },
+    {
+        "prefix": "<OD>",
+        "suffix": "menu<loc_0><loc_0><loc_100><loc_50>logo<loc_400><loc_10><loc_500><loc_60>",
+        "image": "sample3.png"
+    }
+]
