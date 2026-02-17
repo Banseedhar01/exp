@@ -1,0 +1,120 @@
+{
+    "page_caption": "The page displays various travel-related services such as hotels, flights, activities, and rental options, along with special offers and a new user welcome pack.",
+    "image_path": "2024_4_28_15_40_b31f339a2d6441bb994b4a30f184a267-3.png",
+    "clickable_elements": [
+        {
+            "bbox": [
+                56,
+                441,
+                1381,
+                791
+            ],
+            "xml_desc": [
+                "Hotels"
+            ],
+            "type": "Element('Hotels')",
+            "idx": 0,
+            "functionality": "Click to view and book hotel accommodations.",
+            "functionality_variations": [
+                "Tap to browse and reserve hotel accommodations for your trip.",
+                "Access hotel search to view and book available rooms.",
+                "Click to explore hotel options and make reservations.",
+                "Select to view hotel listings and complete your booking.",
+                "Tap to search for hotels and secure accommodations.",
+                "Navigate to hotel booking interface to reserve rooms.",
+                "Click to browse available hotels and make reservations.",
+                "Access hotel search feature to book your stay.",
+                "Tap to view hotel options and reserve accommodations.",
+                "Select to search and book hotel rooms for travel."
+            ],
+            "purpose": "Navigation button to access hotel search and booking functionality within the travel services application."
+        },
+        {
+            "bbox": [
+                629,
+                771,
+                797,
+                939
+            ],
+            "xml_desc": [
+                "New!"
+            ],
+            "type": "",
+            "idx": 1,
+            "functionality": "",
+            "functionality_variations": [
+                "Badge indicating newly added feature or service in the application.",
+                "Visual indicator highlighting recently introduced functionality for users.",
+                "Label marking new content or feature to draw user attention.",
+                "Tag displaying that this is a newly available option or service.",
+                "Indicator badge showing recently added feature in the interface.",
+                "Visual marker highlighting new functionality or service offering.",
+                "Label identifying newly introduced feature to inform users.",
+                "Badge marking recently launched service or capability.",
+                "Indicator showing new feature availability in the application.",
+                "Visual tag highlighting recently added functionality or content."
+            ],
+            "purpose": "Informational badge highlighting newly introduced features or services to attract user attention and awareness."
+        },
+        {
+            "bbox": [
+                56,
+                847,
+                456,
+                1197
+            ],
+            "xml_desc": [
+                "Flights"
+            ],
+            "type": "Element('Flights')",
+            "idx": 2,
+            "functionality": "Click to search and book flights.",
+            "functionality_variations": [
+                "Tap to access flight search interface and book airline tickets.",
+                "Select to browse available flights and complete booking process.",
+                "Click to search for flights by route, date, and passenger details.",
+                "Tap to view flight options with pricing and schedule information.",
+                "Select to access comprehensive flight booking system with filters.",
+                "Click to search and reserve airline tickets for your journey.",
+                "Tap to browse flight listings and book tickets with seat selection.",
+                "Select to access flight search with multiple airlines and routes.",
+                "Click to view available flights and complete reservation process.",
+                "Tap to search flights by destination and book with instant confirmation."
+            ],
+            "purpose": "Navigation button providing access to flight search and airline ticket booking functionality."
+        }
+    ],
+    "scrollable_elements": [
+        {
+            "bbox": [
+                84,
+                1277,
+                1202,
+                1509
+            ],
+            "xml_desc": [
+                "Long Stays Deals",
+                "Day Use",
+                "Special Offers",
+                "Airport Transfer",
+                "Car Rentals"
+            ],
+            "type": "Element('Day Use, Special Offers, Airport Transfer, Long Stays Deals')",
+            "idx": 18,
+            "functionality": "Scroll to view more options in these categories.",
+            "functionality_variations": [
+                "Swipe horizontally to browse additional service category options available.",
+                "Scroll left or right to view more travel service categories.",
+                "Swipe to reveal additional booking options and service categories.",
+                "Scroll horizontally to access more travel-related service offerings.",
+                "Swipe to browse through extended list of available service categories.",
+                "Scroll to view additional travel service options beyond visible area.",
+                "Swipe horizontally to explore more category options and services.",
+                "Scroll to reveal hidden service categories in the horizontal list.",
+                "Swipe to access additional travel service categories and deals.",
+                "Scroll horizontally to view complete range of service category options."
+            ],
+            "purpose": "Horizontally scrollable container displaying multiple travel service categories including deals, transfers, and rentals."
+        }
+    ]
+}
