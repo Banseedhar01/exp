@@ -562,25 +562,32 @@ def process_element(
     element_idx = element.get("idx", -1)
     
     try:
-        # Generate functionality variations
-        variation_prompts = [
-            build_variation_prompt(element, i+1) 
-            for i in range(config.num_variations)
-        ]
+        start_time = time.time()
         
-        variations = generate_text(
-            model, tokenizer, variation_prompts, config, logger, gpu_monitor
+        # Build all prompts at once (variations + purpose)
+        all_prompts = []
+        
+        # Add variation prompts
+        for i in range(config.num_variations):
+            all_prompts.append(build_variation_prompt(element, i+1))
+        
+        # Add purpose prompt
+        all_prompts.append(build_purpose_prompt(element))
+        
+        # Generate all at once in a single batch call
+        all_results = generate_text(
+            model, tokenizer, all_prompts, config, logger, gpu_monitor
         )
         
-        # Clean up variations
-        variations = [v.strip() for v in variations]
+        # Split results
+        variations = [v.strip() for v in all_results[:config.num_variations]]
+        purpose = all_results[config.num_variations].strip() if len(all_results) > config.num_variations else ""
         
-        # Generate purpose
-        purpose_prompt = build_purpose_prompt(element)
-        purpose_result = generate_text(
-            model, tokenizer, [purpose_prompt], config, logger, gpu_monitor
-        )
-        purpose = purpose_result[0].strip() if purpose_result else ""
+        elapsed = time.time() - start_time
+        
+        # Log timing in test/verbose mode
+        if config.test_mode or config.verbose:
+            logger.info(f"    Element {element_idx}: {elapsed:.1f}s")
         
         return {
             "functionality_variations": variations,
@@ -616,6 +623,8 @@ def process_json_file(
     Returns:
         True if successful, False otherwise
     """
+    file_start_time = time.time()
+    
     try:
         # Check if output exists
         output_path = config.output_dir / json_path.name
@@ -652,7 +661,14 @@ def process_json_file(
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
         
-        logger.info(f"✓ Completed {json_path.name}")
+        file_elapsed = time.time() - file_start_time
+        
+        # Log file completion with timing
+        if config.test_mode or config.verbose:
+            logger.info(f"✓ Completed {json_path.name} in {file_elapsed:.1f}s ({file_elapsed/60:.1f}m) - {file_elapsed/len(elements):.1f}s per element")
+        else:
+            logger.info(f"✓ Completed {json_path.name}")
+        
         return True
         
     except Exception as e:
