@@ -1,6 +1,7 @@
 """
 Configuration for Florence-2 Training
-Supports multiple dataset formats: OD (Object Detection) and FUN (Function/Action)
+Supports OD (Object Detection) and COMMAND (Action/Function) formats.
+Both can be trained jointly using MixedFormatDataset.
 """
 
 class Config:
@@ -11,17 +12,23 @@ class Config:
     image_dir = "../datasets/guiact_dataset/images/"
     model_output_dir = "./florence2_finetuned"
     
-    # Dataset format configuration
-    # Options: "OD" (Object Detection), "FUN" (Function/Action), "AUTO" (auto-detect)
+    # ---------------------------------------------------------------
+    # Dataset paths
+    # Each can be a single JSON file OR a directory of JSON files.
+    # Set to None to disable that format during training.
+    # ---------------------------------------------------------------
+    OD_DATASET_PATH = None       # e.g. "data/od/" or "data/od_data.json"
+    COMMAND_DATASET_PATH = None  # e.g. "data/commands/" or "data/commands.json"
+
+    # Single-path shortcut (used when training only one format)
+    # Set DATASET_FORMAT to "OD", "COMMAND", or "AUTO"
     DATASET_FORMAT = "AUTO"
-    
-    # For new dataset formats, specify the JSON file path or directory path
-    # Set to None to use the legacy CSV format (commands_path)
-    DATASET_JSON_PATH = None  # e.g., "data/od_dataset.json" or "data/fun_data/" (directory)
-    
-    # Task tokens for model vocabulary
-    # COMMAND token is used for function/action tasks
-    # OD token is used for object detection tasks
+    DATASET_JSON_PATH = None     # e.g. "data/commands/"  (used if OD/COMMAND paths not set)
+
+    # Task tokens added to the Florence-2 vocabulary
+    # <OD>      - Object Detection task
+    # <COMMAND> - Action/Command grounding task
+    # <UI_ACTION>, <CAPTION>, <EXPECTATION> - reserved for future tasks
     TOKENS = ["UI_ACTION", "CAPTION", "EXPECTATION", "OD", "COMMAND"]
     CUSTOM_TASK_TOKENS = ["<UI_ACTION>", "<CAPTION>", "<EXPECTATION>", "<OD>", "<COMMAND>"]
     
@@ -52,15 +59,19 @@ class Config:
     TASK_LOCATE = "OD"
     
     @classmethod
-    def use_new_dataset_format(cls) -> bool:
-        """Check if using new JSON dataset format."""
-        return cls.DATASET_JSON_PATH is not None
-    
+    def use_mixed_training(cls) -> bool:
+        """True when both OD and COMMAND dataset paths are set."""
+        return cls.OD_DATASET_PATH is not None and cls.COMMAND_DATASET_PATH is not None
+
     @classmethod
     def get_dataset_path(cls) -> str:
-        """Get the appropriate dataset path based on configuration."""
-        if cls.use_new_dataset_format():
+        """Get the primary dataset path (single-format training)."""
+        if cls.DATASET_JSON_PATH is not None:
             return cls.DATASET_JSON_PATH
+        if cls.COMMAND_DATASET_PATH is not None:
+            return cls.COMMAND_DATASET_PATH
+        if cls.OD_DATASET_PATH is not None:
+            return cls.OD_DATASET_PATH
         return cls.commands_path
     
     @classmethod
@@ -78,7 +89,7 @@ class Config:
             raise FileNotFoundError(f"Image directory not found: {cls.image_dir}")
         
         # Validate format type
-        valid_formats = ["OD", "FUN", "AUTO"]
+        valid_formats = ["OD", "COMMAND", "FUN", "AUTO"]
         if cls.DATASET_FORMAT not in valid_formats:
             raise ValueError(f"DATASET_FORMAT must be one of {valid_formats}, got: {cls.DATASET_FORMAT}")
         
