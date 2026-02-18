@@ -158,17 +158,21 @@ class MixedFormatDataset(Dataset):
     def __len__(self) -> int:
         return self._cum_sizes[-1] if self._cum_sizes else 0
 
-    def __getitem__(self, idx: int) -> Tuple[str, str, str]:
+    def __getitem__(self, idx: int) -> Tuple[str, str, str, int]:
+        """Returns (prefix, suffix, image_id, ds_idx) — ds_idx identifies which sub-dataset."""
         if idx < 0 or idx >= len(self):
             raise IndexError(f"Index {idx} out of range")
         ds_idx = next(i for i, s in enumerate(self._cum_sizes) if idx < s)
         local_idx = idx if ds_idx == 0 else idx - self._cum_sizes[ds_idx - 1]
-        return self.datasets[ds_idx][local_idx]
+        prefix, suffix, image_id = self.datasets[ds_idx][local_idx]
+        return prefix, suffix, image_id, ds_idx
 
     def load_image(self, image_id: str, ds_idx: int = 0):
+        """Load image from the correct sub-dataset using ds_idx."""
         return self.datasets[ds_idx].load_image(image_id)
 
-    def get_dataset_for_index(self, idx: int) -> UnifiedFlorenceDataset:
+    def get_dataset_for_index(self, idx: int) -> "UnifiedFlorenceDataset":
         """Return the sub-dataset that owns this global index."""
         ds_idx = next(i for i, s in enumerate(self._cum_sizes) if idx < s)
         return self.datasets[ds_idx]
+

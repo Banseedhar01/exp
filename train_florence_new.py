@@ -107,40 +107,65 @@ def build_dataset() -> torch.utils.data.Dataset:
 
 def collate_batch(batch, processor, device, dataset):
     """
-    Collate a batch of (prefix, suffix, image_id) tuples.
-    Works for OD, COMMAND, and mixed batches — the prefix is passed
-    directly to the Florence-2 processor as the task prompt.
-    """
-    prefixes, suffixes, image_ids = zip(*batch)
+    Collate a batch of tuples from the dataset.
+    - UnifiedFlorenceDataset yields: (prefix, suffix, image_id)
+    - MixedFormatDataset yields:     (prefix, suffix, image_id, ds_idx)
 
-    # Load images — for MixedFormatDataset we need the right sub-dataset
-    images = []
-    for i, image_id in enumerate(image_ids):
-        if isinstance(dataset, MixedFormatDataset):
-            # Find the sub-dataset that owns this sample
-            global_idx = i  # approximate; image_id is unique enough
-            sub_ds = dataset.get_dataset_for_index(i)
-            images.append(sub_ds.load_image(image_id))
+    Florence-2 has a max sequence length of 1024 tokens.
+    OD suffixes with many objects can easily exceed this — we truncate to be safe.
+    """
+    is_mixed = isinstance(dataset, MixedFormatDataset)
+
+    prefixes, suffixes, image_ids, ds_indices = [], [], [], []
+    for item in batch:
+        if is_mixed:
+            prefix, suffix, image_id, ds_idx = item
+            ds_indices.append(ds_idx)
         else:
-            images.append(dataset.load_image(image_id))
+            prefix, suffix, image_id = item
+            ds_indices.append(0)
+        prefixes.append(prefix)
+        suffixes.append(suffix)
+        image_ids.append(image_id)
+
+    # Load images from the correct sub-dataset
+    images = []
+    for image_id, ds_idx in zip(image_ids, ds_indices):
+        if is_mixed:
+            img = dataset.load_image(image_id, ds_idx)
+        else:
+            img = dataset.load_image(image_id)
+        images.append(img)
 
     # Encode inputs (prefix = task prompt for Florence-2)
+    # Truncate to model max length (1024) to avoid index overflow
     inputs = processor(
-        text=list(prefixes),
+        text=prefixes,
         images=images,
         return_tensors="pt",
-        padding=True
+        padding=True,
+        truncation=True,
+        max_length=1024
     ).to(device)
 
     # Encode labels (suffix = expected output)
+    # CRITICAL: truncate here — OD suffixes with many objects can be 2000+ tokens
     labels = processor.tokenizer(
-        text=list(suffixes),
+        text=suffixes,
         return_tensors="pt",
         padding=True,
+        truncation=True,
+        max_length=1024,
         return_token_type_ids=False
     ).input_ids.to(device)
 
+    # Safety clamp: ensure no token ID exceeds vocab size (prevents CUDA index assert)
+    vocab_size = len(processor.tokenizer)
+    labels = labels.clamp(max=vocab_size - 1)
+
     return inputs, labels, image_ids
+
+
 
 
 # -----------------------------------------------------------------------
