@@ -26,6 +26,7 @@ from DataUtils.TrainingUtils import add_custom_tokens, plot_loss_curve, save_mod
 
 _log_handlers = [logging.StreamHandler()]
 if Config.LOG_FILE:
+    os.makedirs(os.path.dirname(os.path.abspath(Config.LOG_FILE)), exist_ok=True)
     _log_handlers.append(logging.FileHandler(Config.LOG_FILE))
 
 logging.basicConfig(
