@@ -13,7 +13,8 @@ Dataset formats:
 import os
 import torch
 import logging
-from transformers import AutoModelForCausalLM, AutoProcessor, AdamW, get_cosine_schedule_with_warmup
+from transformers import AutoModelForCausalLM, AutoProcessor, get_cosine_schedule_with_warmup
+from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
