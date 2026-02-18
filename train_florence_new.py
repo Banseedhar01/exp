@@ -221,8 +221,8 @@ def main():
         logger.info("=" * 60)
 
     # ---- Load model & processor ----
-    model = AutoModelForCausalLM.from_pretrained("./Florence-2-base", trust_remote_code=True)
-    processor = AutoProcessor.from_pretrained("./Florence-2-base", trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(Config.MODEL_PATH, trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(Config.MODEL_PATH, trust_remote_code=True)
 
     # Add custom tokens (<OD>, <COMMAND>, etc.)
     model, processor = add_custom_tokens(model, processor)

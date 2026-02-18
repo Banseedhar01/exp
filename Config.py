@@ -5,11 +5,19 @@ Both can be trained jointly using MixedFormatDataset.
 """
 
 class Config:
+    # ---------------------------------------------------------------
+    # Model
+    # ---------------------------------------------------------------
+    # Local folder:      "./Florence-2-base"
+    # HuggingFace Hub:   "microsoft/Florence-2-base"
+    MODEL_PATH = "./Florence-2-base"
+
     # Dataset paths
     commands_path = "../datasets/guiact_dataset/web_single_click_dataset_with_bbox.csv"
     caption_path = "data/captions.json"
     expectation_path = "data/expectations.json"
     model_output_dir = "./florence2_finetuned"
+
 
     # Image directories — each dataset can have its own image folder
     OD_IMAGE_DIR      = "../datasets/od_images/"       # images for OD dataset
