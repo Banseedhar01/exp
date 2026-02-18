@@ -21,12 +21,7 @@ from accelerate import Accelerator
 
 from Config import Config
 from DataUtils.unified_dataset import UnifiedFlorenceDataset, MixedFormatDataset
-
-# Optional legacy utilities
-try:
-    from DataUtils.TrainingUtils import add_custom_tokens, plot_loss_curve, save_model_checkpoint, save_loss_log
-except ImportError:
-    add_custom_tokens = plot_loss_curve = save_model_checkpoint = save_loss_log = None
+from DataUtils.TrainingUtils import add_custom_tokens, plot_loss_curve, save_model_checkpoint, save_loss_log
 
 logging.basicConfig(
     level=logging.INFO,
@@ -230,17 +225,7 @@ def main():
     processor = AutoProcessor.from_pretrained("./Florence-2-base", trust_remote_code=True)
 
     # Add custom tokens (<OD>, <COMMAND>, etc.)
-    if add_custom_tokens:
-        model, processor = add_custom_tokens(model, processor)
-    else:
-        # Inline token addition if TrainingUtils not available
-        new_tokens = [t for t in Config.CUSTOM_TASK_TOKENS
-                      if t not in processor.tokenizer.get_vocab()]
-        if new_tokens:
-            processor.tokenizer.add_tokens(new_tokens)
-            model.resize_token_embeddings(len(processor.tokenizer))
-            if accelerator.is_main_process:
-                logger.info(f"Added {len(new_tokens)} custom tokens: {new_tokens}")
+    model, processor = add_custom_tokens(model, processor)
 
     if Config.FREEZE_VISION_ENCODER:
         for param in model.vision_tower.parameters():
