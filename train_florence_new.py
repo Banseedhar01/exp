@@ -24,10 +24,14 @@ from Config import Config
 from DataUtils.unified_dataset import UnifiedFlorenceDataset, MixedFormatDataset
 from DataUtils.TrainingUtils import add_custom_tokens, plot_loss_curve, save_model_checkpoint, save_loss_log
 
+_log_handlers = [logging.StreamHandler()]
+if Config.LOG_FILE:
+    _log_handlers.append(logging.FileHandler(Config.LOG_FILE))
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.FileHandler('training.log'), logging.StreamHandler()]
+    handlers=_log_handlers
 )
 logger = logging.getLogger(__name__)
 

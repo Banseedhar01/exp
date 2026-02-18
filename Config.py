@@ -17,6 +17,7 @@ class Config:
     caption_path = "data/captions.json"
     expectation_path = "data/expectations.json"
     model_output_dir = "./florence2_finetuned"
+    LOG_FILE = "training.log"   # set to None to disable file logging
 
 
     # Image directories — each dataset can have its own image folder
