@@ -20,9 +20,43 @@ from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 from accelerate import Accelerator
 
+import argparse
+
 from Config import Config
 from DataUtils.unified_dataset import UnifiedFlorenceDataset, MixedFormatDataset
 from DataUtils.TrainingUtils import add_custom_tokens, plot_loss_curve, save_model_checkpoint, save_loss_log
+
+# -----------------------------------------------------------------------
+# CLI arguments — override Config values at runtime
+# -----------------------------------------------------------------------
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Florence-2 Training Script")
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        default=None,
+        help=f"Path to training log file (default: Config.LOG_FILE = '{Config.LOG_FILE}')"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help=f"Directory to save the final model (default: Config.model_output_dir = '{Config.model_output_dir}')"
+    )
+    return parser.parse_args()
+
+args = parse_args()
+
+# Apply CLI overrides to Config before anything else uses them
+if args.log_file:
+    Config.LOG_FILE = args.log_file
+if args.output_dir:
+    Config.model_output_dir = args.output_dir
+
+# -----------------------------------------------------------------------
+# Logging — uses Config.LOG_FILE (possibly overridden by CLI)
+# -----------------------------------------------------------------------
 
 _log_handlers = [logging.StreamHandler()]
 if Config.LOG_FILE:
@@ -35,6 +69,7 @@ logging.basicConfig(
     handlers=_log_handlers
 )
 logger = logging.getLogger(__name__)
+
 
 
 # -----------------------------------------------------------------------
