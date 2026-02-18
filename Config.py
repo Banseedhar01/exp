@@ -9,8 +9,14 @@ class Config:
     commands_path = "../datasets/guiact_dataset/web_single_click_dataset_with_bbox.csv"
     caption_path = "data/captions.json"
     expectation_path = "data/expectations.json"
-    image_dir = "../datasets/guiact_dataset/images/"
     model_output_dir = "./florence2_finetuned"
+
+    # Image directories — each dataset can have its own image folder
+    OD_IMAGE_DIR      = "../datasets/od_images/"       # images for OD dataset
+    COMMAND_IMAGE_DIR = "../datasets/command_images/"  # images for COMMAND dataset
+
+    # Legacy single image_dir (used as fallback if above are not set)
+    image_dir = "../datasets/guiact_dataset/images/"
     
     # ---------------------------------------------------------------
     # Dataset paths

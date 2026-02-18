@@ -35,14 +35,15 @@ Each sample can be a **separate JSON file** in a directory (recommended) or all 
 your_project/
 ├── od_data/                  # OD samples — one JSON per image
 │   ├── sample001.json
-│   ├── sample002.json
+│   └── ...
+├── od_images/                # Images for OD dataset
+│   ├── screenshot001.png
 │   └── ...
 ├── commands/                 # COMMAND samples — one JSON per image
 │   ├── sample001.json
-│   ├── sample002.json
 │   └── ...
-└── images/                   # All images (shared)
-    ├── screenshot001.png
+└── command_images/           # Images for COMMAND dataset
+    ├── 2024_4_30_screenshot.png
     └── ...
 ```
 
@@ -84,7 +85,9 @@ Edit `Config.py`:
 
 ```python
 class Config:
-    image_dir = "path/to/images/"
+    # Image directories — each dataset has its own image folder
+    OD_IMAGE_DIR      = "data/od_images/"       # images for OD dataset
+    COMMAND_IMAGE_DIR = "data/command_images/"  # images for COMMAND dataset
 
     # --- Option A: Mixed OD + COMMAND training (recommended) ---
     OD_DATASET_PATH      = "data/od_data/"       # directory or .json file

@@ -45,55 +45,59 @@ def build_dataset() -> torch.utils.data.Dataset:
     Build the training dataset from Config.
     Supports three modes:
       1. Mixed:   OD_DATASET_PATH + COMMAND_DATASET_PATH both set → MixedFormatDataset
-      2. Single:  Only one of OD/COMMAND path set → UnifiedFlorenceDataset
-      3. Shortcut: DATASET_JSON_PATH set → UnifiedFlorenceDataset with DATASET_FORMAT
+      2. OD only: OD_DATASET_PATH set
+      3. COMMAND only: COMMAND_DATASET_PATH set
+      4. Shortcut: DATASET_JSON_PATH set → UnifiedFlorenceDataset with DATASET_FORMAT
+
+    Each format uses its own image directory (OD_IMAGE_DIR / COMMAND_IMAGE_DIR).
     """
-    common = dict(
-        image_dir=Config.image_dir,
-        image_size=Config.IMAGE_SIZE,
-        resize_images=Config.RESIZE_IMAGES,
-    )
+    size_cfg = dict(image_size=Config.IMAGE_SIZE, resize_images=Config.RESIZE_IMAGES)
 
     # --- Mode 1: Mixed training ---
     if Config.use_mixed_training():
         logger.info("Mixed training mode: OD + COMMAND")
         od_ds = UnifiedFlorenceDataset(
             data_path=Config.OD_DATASET_PATH,
+            image_dir=Config.OD_IMAGE_DIR,
             format_type="OD",
-            **common
+            **size_cfg
         )
         cmd_ds = UnifiedFlorenceDataset(
             data_path=Config.COMMAND_DATASET_PATH,
+            image_dir=Config.COMMAND_IMAGE_DIR,
             format_type="COMMAND",
-            **common
+            **size_cfg
         )
         return MixedFormatDataset([od_ds, cmd_ds])
 
-    # --- Mode 2: Single path via OD_DATASET_PATH ---
+    # --- Mode 2: OD only ---
     if Config.OD_DATASET_PATH is not None:
         logger.info("Single-format training: OD")
         return UnifiedFlorenceDataset(
             data_path=Config.OD_DATASET_PATH,
+            image_dir=Config.OD_IMAGE_DIR,
             format_type="OD",
-            **common
+            **size_cfg
         )
 
-    # --- Mode 3: Single path via COMMAND_DATASET_PATH ---
+    # --- Mode 3: COMMAND only ---
     if Config.COMMAND_DATASET_PATH is not None:
         logger.info("Single-format training: COMMAND")
         return UnifiedFlorenceDataset(
             data_path=Config.COMMAND_DATASET_PATH,
+            image_dir=Config.COMMAND_IMAGE_DIR,
             format_type="COMMAND",
-            **common
+            **size_cfg
         )
 
-    # --- Mode 4: Shortcut DATASET_JSON_PATH ---
+    # --- Mode 4: Shortcut DATASET_JSON_PATH (uses legacy image_dir) ---
     if Config.DATASET_JSON_PATH is not None:
         logger.info(f"Single-format training via DATASET_JSON_PATH (format={Config.DATASET_FORMAT})")
         return UnifiedFlorenceDataset(
             data_path=Config.DATASET_JSON_PATH,
+            image_dir=Config.image_dir,
             format_type=Config.DATASET_FORMAT,
-            **common
+            **size_cfg
         )
 
     raise ValueError(
