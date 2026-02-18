@@ -222,7 +222,13 @@ def main():
         logger.info("=" * 60)
 
     # ---- Load model & processor ----
-    model = AutoModelForCausalLM.from_pretrained(Config.MODEL_PATH, trust_remote_code=True)
+    # attn_implementation="eager" bypasses the SDPA check that fails when the
+    # cached Florence-2 modeling_florence2.py is older than the installed transformers.
+    model = AutoModelForCausalLM.from_pretrained(
+        Config.MODEL_PATH,
+        trust_remote_code=True,
+        attn_implementation="eager"
+    )
     processor = AutoProcessor.from_pretrained(Config.MODEL_PATH, trust_remote_code=True)
 
     # Add custom tokens (<OD>, <COMMAND>, etc.)
