@@ -109,12 +109,49 @@ class Config:
 ### 3. Run Training
 
 ```bash
-# Single GPU
+# Single GPU — all defaults from Config.py
 python train_florence_new.py
 
-# Multi-GPU with Accelerate
-accelerate launch train_florence_new.py
+# Single GPU — override key params at runtime
+python train_florence_new.py \
+  --batch-size 4 \
+  --grad-accum 2 \
+  --epochs 10 \
+  --lr 2e-5 \
+  --output-dir models/run1 \
+  --log-file logs/run1.log
+
+# Multi-GPU with Accelerate (4 GPUs)
+accelerate launch --num_processes 4 train_florence_new.py \
+  --batch-size 2 \
+  --grad-accum 4 \
+  --output-dir models/run1 \
+  --log-file logs/run1.log
 ```
+
+#### All CLI Arguments
+
+| Argument | Type | Default (from Config) | Description |
+|---|---|---|---|
+| `--batch-size` | int | `Config.BATCH_SIZE` | Per-GPU batch size |
+| `--grad-accum` | int | `Config.GRADIENT_ACCUMULATION_STEPS` | Gradient accumulation steps |
+| `--epochs` | int | `Config.EPOCHS` | Number of training epochs |
+| `--lr` | float | `Config.LEARNING_RATE` | Learning rate |
+| `--output-dir` | str | `Config.model_output_dir` | Where to save the trained model |
+| `--log-file` | str | `Config.LOG_FILE` | Training log file path (auto-creates dir) |
+
+> All args are optional — values from `Config.py` are used as defaults when not specified.
+
+#### Multi-GPU Scaling Guide
+
+Keep the **effective batch size** (`BATCH_SIZE × GRAD_ACCUM × num_GPUs`) consistent across GPU counts to maintain training stability:
+
+| GPUs | `--batch-size` | `--grad-accum` | Effective batch | Suggested `--lr` |
+|---|---|---|---|---|
+| 1 | 2 | 8 | 16 | `5e-6` |
+| 4 | 2 | 4 | 32 | `1e-5` |
+| 8 | 2 | 2 | 32 | `1e-5` |
+| 8 | 4 | 2 | 64 | `2e-5` |
 
 ---
 
@@ -233,11 +270,54 @@ python DataUtils/data_validator.py data/commands/ --format COMMAND
 
 ## Coordinate System
 
-Florence-2 uses normalized coordinates in the range [0, 999]:
+Florence-2 uses normalized coordinates in the range **[0, 999]** — independent of image size or resize.
+
 - `<loc_0>` = 0% of image dimension
 - `<loc_999>` = 100% of image dimension
+- `<loc_500>` = 50% of image dimension
 
-Example: For a 1000×1000 image, `<loc_500>` = pixel 500.
+### Converting pixel → loc token (for dataset creation)
+
+```python
+def pixel_to_loc(px, py, orig_w, orig_h):
+    x_norm = int((px / orig_w) * 999)
+    y_norm = int((py / orig_h) * 999)
+    return x_norm, y_norm
+
+# e.g. bbox (100, 200, 300, 400) on a 1080×1920 image
+lx1, ly1 = pixel_to_loc(100, 200, 1080, 1920)   # → 92, 104
+lx2, ly2 = pixel_to_loc(300, 400, 1080, 1920)   # → 277, 208
+suffix = f"<loc_{lx1}><loc_{ly1}><loc_{lx2}><loc_{ly2}>"
+```
+
+### Post-processing model output → pixel coordinates
+
+```python
+import re
+
+def parse_loc_tokens(text):
+    return [int(x) for x in re.findall(r'<loc_(\d+)>', text)]
+
+def loc_to_pixel(val, dimension):
+    return int(val / 999 * dimension)
+
+# After inference:
+output_text = "<loc_245><loc_312><loc_489><loc_601>"
+locs = parse_loc_tokens(output_text)  # [245, 312, 489, 601]
+
+orig_w, orig_h = image.size           # original PIL image size
+
+if len(locs) == 4:   # bounding box
+    x1 = loc_to_pixel(locs[0], orig_w)
+    y1 = loc_to_pixel(locs[1], orig_h)
+    x2 = loc_to_pixel(locs[2], orig_w)
+    y2 = loc_to_pixel(locs[3], orig_h)
+elif len(locs) == 2: # click point
+    cx = loc_to_pixel(locs[0], orig_w)
+    cy = loc_to_pixel(locs[1], orig_h)
+```
+
+> ⚠️ Always convert relative to the **original** image size, not the resized 768×768 training resolution.
 
 ---
 
