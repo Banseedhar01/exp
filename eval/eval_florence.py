@@ -195,9 +195,14 @@ class ParquetDataset:
     def _get_image_bytes(self, row) -> bytes:
         """Extract raw image bytes regardless of column layout."""
         val = row[self._img_col]
+        if val is None:
+            raise ValueError("image bytes is None (missing image data in this row)")
         if isinstance(val, dict):
-            return val["bytes"]   # nested layout
-        return val                # flat layout — already bytes
+            b = val.get("bytes")
+            if b is None:
+                raise ValueError("image dict has no 'bytes' key or it is None")
+            return b
+        return val   # flat layout — already bytes
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
