@@ -32,27 +32,24 @@ from DataUtils.TrainingUtils import add_custom_tokens, plot_loss_curve, save_mod
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Florence-2 Training Script")
-    parser.add_argument(
-        "--log-file",
-        type=str,
-        default=None,
-        help=f"Path to training log file (default: Config.LOG_FILE = '{Config.LOG_FILE}')"
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default=None,
-        help=f"Directory to save the final model (default: Config.model_output_dir = '{Config.model_output_dir}')"
-    )
+    parser.add_argument("--log-file",   type=str,   default=None, help=f"Log file path (default: '{Config.LOG_FILE}')")
+    parser.add_argument("--output-dir", type=str,   default=None, help=f"Model save directory (default: '{Config.model_output_dir}')")
+    parser.add_argument("--batch-size", type=int,   default=None, help=f"Per-GPU batch size (default: {Config.BATCH_SIZE})")
+    parser.add_argument("--grad-accum", type=int,   default=None, help=f"Gradient accumulation steps (default: {Config.GRADIENT_ACCUMULATION_STEPS})")
+    parser.add_argument("--epochs",     type=int,   default=None, help=f"Number of epochs (default: {Config.EPOCHS})")
+    parser.add_argument("--lr",         type=float, default=None, help=f"Learning rate (default: {Config.LEARNING_RATE})")
     return parser.parse_args()
 
 args = parse_args()
 
 # Apply CLI overrides to Config before anything else uses them
-if args.log_file:
-    Config.LOG_FILE = args.log_file
-if args.output_dir:
-    Config.model_output_dir = args.output_dir
+if args.log_file:   Config.LOG_FILE            = args.log_file
+if args.output_dir: Config.model_output_dir    = args.output_dir
+if args.batch_size: Config.BATCH_SIZE          = args.batch_size
+if args.grad_accum: Config.GRADIENT_ACCUMULATION_STEPS = args.grad_accum
+if args.epochs:     Config.EPOCHS             = args.epochs
+if args.lr:         Config.LEARNING_RATE      = args.lr
+
 
 # -----------------------------------------------------------------------
 # Logging — uses Config.LOG_FILE (possibly overridden by CLI)
