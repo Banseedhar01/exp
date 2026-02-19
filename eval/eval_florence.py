@@ -168,21 +168,41 @@ def draw_boxes(image: Image.Image, pred_bbox, gt_bbox) -> Image.Image:
 class ParquetDataset:
     """
     Loads ScreenSpot-style parquet file.
-    Columns: image (bytes dict), bbox ([x1,y1,x2,y2] normalized 0-1),
-             instruction, file_name
+
+    Supported column layouts:
+      Layout A (nested):  image = {"bytes": ..., "path": ...}
+      Layout B (flat):    image.bytes = bytes,  image.path = str   ← this dataset
+    Columns: file_name, bbox ([x1,y1,x2,y2] normalized 0-1),
+             instruction, data_type, data_source, image.bytes, image.path
     """
     def __init__(self, path: str, task_token: str, image_size: int):
         import pandas as pd
         self.df = pd.read_parquet(path)
         self.task_token = task_token
         self.image_size = image_size
+        # Detect column layout
+        cols = set(self.df.columns)
+        if "image.bytes" in cols:
+            self._img_col = "image.bytes"       # flat layout (your dataset)
+        elif "image" in cols:
+            self._img_col = "image"             # nested layout
+        else:
+            raise ValueError(f"Cannot find image column. Available: {cols}")
 
     def __len__(self):
         return len(self.df)
 
+    def _get_image_bytes(self, row) -> bytes:
+        """Extract raw image bytes regardless of column layout."""
+        val = row[self._img_col]
+        if isinstance(val, dict):
+            return val["bytes"]   # nested layout
+        return val                # flat layout — already bytes
+
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-        img = Image.open(io.BytesIO(row["image"]["bytes"])).convert("RGB")
+        img_bytes = self._get_image_bytes(row)
+        img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
         orig_w, orig_h = img.size
 
         # GT bbox: normalized [0,1] → pixel in original image space
@@ -198,6 +218,9 @@ class ParquetDataset:
         img_resized = img.resize((self.image_size, self.image_size), Image.Resampling.LANCZOS)
         prompt = f"{self.task_token} {row['instruction']}".strip()
 
+        # File name — prefer image.path then file_name
+        file_name = str(row.get("image.path", row.get("file_name", f"sample_{idx}")))
+
         return {
             "prompt":       prompt,
             "image":        img_resized,
@@ -205,9 +228,10 @@ class ParquetDataset:
             "gt_bbox":      gt_bbox,      # in original pixel space
             "orig_w":       orig_w,
             "orig_h":       orig_h,
-            "file_name":    str(row.get("file_name", f"sample_{idx}")),
+            "file_name":    file_name,
             "idx":          idx,
         }
+
 
 
 class JSONDataset:
