@@ -1,11 +1,12 @@
 """
 train.py — Florence-2 multi-GPU training script with multi-dataset support.
 
-Supports four dataset types:
+Supports five dataset types:
   - action       : existing ActionDataset  (CSV)
   - info         : existing InfoDataset    (CSV)
   - amex_od      : AMEX Object Detection   (JSON)
   - amex_ui      : AMEX UI Action          (JSON)
+  - vqa          : Visual Question Answering (JSON)
 
 Any combination can be enabled via CLI flags.  Datasets are concatenated and
 shuffled together via DistributedSampler so multi-task batches are well-mixed.
@@ -17,13 +18,19 @@ Example usage:
         --use-amex-ui --amex-ui-json /data/ui.json --amex-ui-images /data/ui_imgs \\
         --batch-size 4 --epochs 3 --output-dir ./runs/amex_mixed
 
-    # Train on all four datasets, cap each at 10 000 samples
+    # Train on VQA only
+    accelerate launch train.py \\
+        --use-vqa --vqa-json /data/vqa.json --vqa-images /data/vqa_images \\
+        --batch-size 4 --epochs 5 --output-dir ./runs/vqa
+
+    # Train on all five datasets, cap each at 10 000 samples
     accelerate launch train.py \\
         --use-action  --action-csv /data/action.csv  --action-images /data/imgs \\
         --use-info    --info-csv   /data/info.csv                                \\
         --use-amex-od --amex-od-json /data/od.json   --amex-od-images /data/od  \\
         --use-amex-ui --amex-ui-json /data/ui.json   --amex-ui-images /data/ui  \\
-        --max-action 10000 --max-info 10000 --max-amex-od 10000 --max-amex-ui 10000
+        --use-vqa     --vqa-json    /data/vqa.json   --vqa-images /data/vqa     \\
+        --max-action 10000 --max-info 10000 --max-amex-od 10000 --max-amex-ui 10000 --max-vqa 10000
 """
 
 import os
@@ -31,7 +38,7 @@ import sys
 import argparse
 import logging
 import torch
-from torch.utils.data import Dataset, ConcatDataset, DataLoader
+from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from transformers import AutoModelForCausalLM, AutoProcessor, AdamW, get_cosine_schedule_with_warmup
 from tqdm import tqdm
@@ -82,6 +89,7 @@ def parse_args():
     parser.add_argument("--use-info",     action="store_true", help="Enable existing InfoDataset (CSV)")
     parser.add_argument("--use-amex-od",  action="store_true", help="Enable AMEX OD JSON dataset")
     parser.add_argument("--use-amex-ui",  action="store_true", help="Enable AMEX UI Action JSON dataset")
+    parser.add_argument("--use-vqa",      action="store_true", help="Enable VQA JSON dataset")
 
     # -- Dataset paths --
     parser.add_argument("--action-csv",    default=Config.commands_path,         help="Path to action CSV file")
@@ -91,16 +99,20 @@ def parse_args():
     parser.add_argument("--amex-od-images",  default=Config.amex_od_image_dir,   help="Image directory for AMEX OD dataset")
     parser.add_argument("--amex-ui-json",    default=Config.amex_ui_action_json, help="Path to AMEX UI Action annotations JSON")
     parser.add_argument("--amex-ui-images",  default=Config.amex_ui_action_image_dir, help="Image directory for AMEX UI Action dataset")
+    parser.add_argument("--vqa-json",        default=Config.vqa_json,            help="Path to VQA annotations JSON")
+    parser.add_argument("--vqa-images",      default=Config.vqa_image_dir,       help="Image directory for VQA dataset")
 
     # -- Per-dataset sample caps --
     parser.add_argument("--max-action",   type=int, default=None, help="Max samples from ActionDataset (default: all)")
     parser.add_argument("--max-info",     type=int, default=None, help="Max samples from InfoDataset (default: all)")
     parser.add_argument("--max-amex-od",  type=int, default=None, help="Max samples from AMEX OD dataset (default: all)")
     parser.add_argument("--max-amex-ui",  type=int, default=None, help="Max samples from AMEX UI Action dataset (default: all)")
+    parser.add_argument("--max-vqa",      type=int, default=None, help="Max samples from VQA dataset (default: all)")
 
     # -- Test / debug --
     parser.add_argument("--test-mode",    action="store_true",              help="Enable test mode (small dataset slice)")
     parser.add_argument("--test-samples", type=int, default=Config.TEST_SAMPLE_SIZE, help="Number of samples in test mode")
+    parser.add_argument("--val-split",    type=float, default=Config.VAL_SPLIT,      help="Fraction of data held out for validation (0–1)")
 
     return parser.parse_args()
 
@@ -122,6 +134,7 @@ def apply_args_to_config(args):
     Config.USE_INFO                  = args.use_info
     Config.USE_AMEX_OD               = args.use_amex_od
     Config.USE_AMEX_UI_ACTION        = args.use_amex_ui
+    Config.USE_VQA                   = args.use_vqa
     Config.commands_path             = args.action_csv
     Config.image_dir                 = args.action_images
     Config.info_path                 = args.info_csv
@@ -129,12 +142,16 @@ def apply_args_to_config(args):
     Config.amex_od_image_dir         = args.amex_od_images
     Config.amex_ui_action_json       = args.amex_ui_json
     Config.amex_ui_action_image_dir  = args.amex_ui_images
+    Config.vqa_json                  = args.vqa_json
+    Config.vqa_image_dir             = args.vqa_images
     Config.MAX_ACTION                = args.max_action
     Config.MAX_INFO                  = args.max_info
     Config.MAX_AMEX_OD               = args.max_amex_od
     Config.MAX_AMEX_UI_ACTION        = args.max_amex_ui
+    Config.MAX_VQA                   = args.max_vqa
     Config.TEST_MODE                 = args.test_mode
     Config.TEST_SAMPLE_SIZE          = args.test_samples
+    Config.VAL_SPLIT                 = args.val_split
 
 
 # ============================================================
@@ -315,10 +332,27 @@ def load_datasets(logger):
         counts["amex_ui"] = len(raw)
         logger.info(f"[Loader] AMEX UI Action → {len(raw):,} samples")
 
+    # ---- VQA Dataset ---------------------------------------------------------
+    if Config.USE_VQA:
+        from DataUtils.VQADataset import VQADataset
+        logger.info("[Loader] Loading VQA Dataset …")
+        ds = VQADataset(
+            json_path=Config.vqa_json,
+            image_dir=Config.vqa_image_dir,
+            max_samples=Config.MAX_VQA,
+        )
+        raw = ds.getData()
+        if Config.TEST_MODE:
+            raw = raw[: Config.TEST_SAMPLE_SIZE]
+
+        datasets_with_loaders.append((raw, ds.load_image))
+        counts["vqa"] = len(raw)
+        logger.info(f"[Loader] VQA             → {len(raw):,} samples")
+
     if not datasets_with_loaders:
         raise ValueError(
             "No datasets enabled! Use at least one of: "
-            "--use-action, --use-info, --use-amex-od, --use-amex-ui"
+            "--use-action, --use-info, --use-amex-od, --use-amex-ui, --use-vqa"
         )
 
     mixed = MixedFlorenceDataset(datasets_with_loaders)
@@ -336,6 +370,34 @@ def print_dataset_summary(counts, logger):
 
 
 # ============================================================
+# Train / Validation split
+# ============================================================
+
+def split_dataset(dataset, val_fraction: float, seed: int = 42):
+    """
+    Randomly split a MixedFlorenceDataset into (train_subset, val_subset).
+
+    Args:
+        dataset:      Full MixedFlorenceDataset.
+        val_fraction: Fraction of samples reserved for validation (e.g. 0.1).
+        seed:         Random seed for reproducibility.
+
+    Returns:
+        (train_dataset, val_dataset) both as torch Subset objects.
+    """
+    import math
+    from torch.utils.data import random_split
+
+    n_total = len(dataset)
+    n_val   = max(1, math.floor(n_total * val_fraction))
+    n_train = n_total - n_val
+
+    generator = torch.Generator().manual_seed(seed)
+    train_subset, val_subset = random_split(dataset, [n_train, n_val], generator=generator)
+    return train_subset, val_subset
+
+
+# ============================================================
 # Collate & Training
 # ============================================================
 
@@ -343,6 +405,11 @@ def collate_batch(batch, processor, device, logger=None, debug=False):
     """
     Collate a list of (prefix, suffix, image_id, image_loader_fn) tuples
     into model inputs and labels.
+
+    Fixes applied:
+    - Pad token IDs in labels are replaced with -100 so they are ignored
+      during loss computation (prevents out-of-bounds embedding index errors).
+    - Sequences are hard-truncated to MAX_SEQ_LEN (Florence-2 positional limit).
     """
     prefixes, suffixes, image_ids, loaders = zip(*batch)
 
@@ -361,12 +428,58 @@ def collate_batch(batch, processor, device, logger=None, debug=False):
         padding=True,
     ).to(device)
 
-    labels = processor.tokenizer(
+    # Florence-2-base max position embeddings = 1024 tokens.
+    # Sequences longer than this cause positional embedding index out-of-bounds
+    # → CUDA assertion failure.  Truncate both inputs and labels to be safe.
+    MAX_SEQ_LEN = 1024
+
+    # Tokenize labels (suffixes) with hard truncation
+    label_encoding = processor.tokenizer(
         text=list(suffixes),
         return_tensors="pt",
         padding=True,
+        truncation=True,
+        max_length=MAX_SEQ_LEN,
         return_token_type_ids=False,
-    ).input_ids.to(device)
+    )
+    labels = label_encoding.input_ids.to(device)
+
+    # FIX: Replace pad token IDs with -100 so they are ignored in loss.
+    # Without this, pad IDs are treated as valid vocab indices which can
+    # exceed the embedding table size → CUDA index assertion failure.
+    labels[labels == processor.tokenizer.pad_token_id] = -100
+
+    # Also truncate input_ids if they somehow exceed MAX_SEQ_LEN
+    if inputs["input_ids"].shape[1] > MAX_SEQ_LEN:
+        inputs["input_ids"] = inputs["input_ids"][:, :MAX_SEQ_LEN]
+        if "attention_mask" in inputs:
+            inputs["attention_mask"] = inputs["attention_mask"][:, :MAX_SEQ_LEN]
+
+    if debug and logger:
+        # Use len(processor.tokenizer) — includes custom tokens added via
+        # add_custom_tokens(). DO NOT use processor.tokenizer.vocab_size which
+        # returns the base vocab size and will give false positives.
+        actual_vocab_size = len(processor.tokenizer)
+        valid_labels = labels[labels != -100]
+        if valid_labels.numel() > 0:
+            max_label_id = valid_labels.max().item()
+            logger.info(
+                f"[collate_batch] actual_vocab_size={actual_vocab_size}, "
+                f"max_label_id={max_label_id}, "
+                f"label_seq_len={labels.shape[1]}, "
+                f"input_seq_len={inputs['input_ids'].shape[1]}"
+            )
+            if max_label_id >= actual_vocab_size:
+                logger.error(
+                    f"[collate_batch] LABEL OUT OF RANGE! "
+                    f"max_label_id={max_label_id} >= actual_vocab_size={actual_vocab_size}."
+                )
+        max_input_id = inputs["input_ids"].max().item()
+        if max_input_id >= actual_vocab_size:
+            logger.error(
+                f"[collate_batch] INPUT ID OUT OF RANGE! "
+                f"max_input_id={max_input_id} >= actual_vocab_size={actual_vocab_size}."
+            )
 
     return inputs, labels, image_ids
 
@@ -442,12 +555,99 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, accelerator,
     if accelerator.is_main_process:
         if num_batches > 0:
             avg = total_loss / num_batches
-            logger.info(f"Epoch {epoch + 1} done — avg_loss={avg:.4f} batches={num_batches} samples_this_gpu={samples_processed}")
+            logger.info(
+                f"Epoch {epoch + 1} done — avg_loss={avg:.4f} "
+                f"batches={num_batches} samples_this_gpu={samples_processed}"
+            )
         else:
             logger.warning(f"Epoch {epoch + 1} — 0 batches processed")
 
     torch.cuda.empty_cache()
     return total_loss / num_batches if num_batches > 0 else 0.0
+
+
+def validate_epoch(model, val_loader, processor, accelerator, epoch, logger):
+    """
+    Run one validation pass (no gradients).  Returns average val loss.
+    """
+    model.eval()
+    total_loss = 0.0
+    num_batches = 0
+
+    if accelerator.is_main_process:
+        logger.info(f"[Val] Epoch {epoch + 1} — running validation on {len(val_loader)} batches …")
+
+    with torch.no_grad():
+        progress = tqdm(
+            val_loader,
+            desc=f"Val   {epoch + 1}",
+            disable=not accelerator.is_main_process,
+        )
+        for batch in progress:
+            try:
+                inputs, labels, _ = collate_batch(
+                    batch, processor, accelerator.device,
+                    logger=None, debug=False,
+                )
+                outputs = model(
+                    input_ids=inputs["input_ids"],
+                    pixel_values=inputs["pixel_values"],
+                    labels=labels,
+                )
+                total_loss += outputs.loss.item()
+                num_batches += 1
+                progress.set_postfix({"val_loss": f"{outputs.loss.item():.4f}"})
+            except RuntimeError as e:
+                if "CUDA out of memory" in str(e):
+                    if accelerator.is_local_main_process:
+                        logger.error("[Val] OOM — skipping batch")
+                    torch.cuda.empty_cache()
+                    continue
+                raise
+            except Exception as e:
+                if accelerator.is_local_main_process:
+                    import traceback
+                    logger.error(f"[Val] Batch error: {e}\n{traceback.format_exc()}")
+                continue
+
+    avg_val_loss = total_loss / num_batches if num_batches > 0 else 0.0
+    if accelerator.is_main_process:
+        logger.info(f"[Val] Epoch {epoch + 1} — avg_val_loss={avg_val_loss:.4f}")
+
+    torch.cuda.empty_cache()
+    return avg_val_loss
+
+
+# ============================================================
+# Per-epoch loss file helper
+# ============================================================
+
+def save_epoch_losses(epoch: int, train_loss: float, val_loss: float, log_dir: str):
+    """
+    Append epoch loss summary to a single CSV-like text file AND write a
+    per-epoch JSON snapshot for easy downstream parsing.
+
+    Files written:
+      <log_dir>/epoch_losses.csv          — running CSV (epoch, train_loss, val_loss)
+      <log_dir>/epoch_N_losses.json       — snapshot for this epoch only
+    """
+    os.makedirs(log_dir, exist_ok=True)
+
+    # ---- running CSV ----
+    csv_path = os.path.join(log_dir, "epoch_losses.csv")
+    write_header = not os.path.exists(csv_path)
+    with open(csv_path, "a") as f:
+        if write_header:
+            f.write("epoch,train_loss,val_loss\n")
+        f.write(f"{epoch + 1},{train_loss:.6f},{val_loss:.6f}\n")
+
+    # ---- per-epoch JSON ----
+    json_path = os.path.join(log_dir, f"epoch_{epoch + 1}_losses.json")
+    with open(json_path, "w") as f:
+        json.dump(
+            {"epoch": epoch + 1, "train_loss": round(train_loss, 6), "val_loss": round(val_loss, 6)},
+            f, indent=2,
+        )
 
 
 # ============================================================
@@ -480,7 +680,25 @@ def main():
 
     model = AutoModelForCausalLM.from_pretrained(Config.model_path, trust_remote_code=True)
     processor = AutoProcessor.from_pretrained(Config.model_path, trust_remote_code=True)
+    tokenizer_vocab_size_before = len(processor.tokenizer)
     model, processor = add_custom_tokens(model, processor)
+    tokenizer_vocab_size_after = len(processor.tokenizer)
+
+    if accelerator.is_main_process:
+        logger.info(
+            f"Tokenizer vocab: {tokenizer_vocab_size_before} → {tokenizer_vocab_size_after} "
+            f"(+{tokenizer_vocab_size_after - tokenizer_vocab_size_before} custom tokens)"
+        )
+        # Verify embedding table was resized to match the new tokenizer vocab
+        embed_size = model.get_input_embeddings().weight.shape[0]
+        if embed_size < tokenizer_vocab_size_after:
+            raise RuntimeError(
+                f"Embedding table size ({embed_size}) < tokenizer vocab size "
+                f"({tokenizer_vocab_size_after}). "
+                "add_custom_tokens() must call model.resize_token_embeddings(len(processor.tokenizer)). "
+                "Fix this before training or you will hit CUDA index assertion errors."
+            )
+        logger.info(f"Embedding table size: {embed_size} ✓")
 
     if Config.FREEZE_VISION_ENCODER:
         for param in model.vision_tower.parameters():
@@ -497,25 +715,50 @@ def main():
     if accelerator.is_main_process:
         print_dataset_summary(counts, logger)
 
+    # ---- Train / Validation split --------------------------------------------
+    train_dataset, val_dataset = split_dataset(mixed_dataset, Config.VAL_SPLIT)
+
+    if accelerator.is_main_process:
+        logger.info(
+            f"[Split] Total={len(mixed_dataset):,} | "
+            f"Train={len(train_dataset):,} | "
+            f"Val={len(val_dataset):,} "
+            f"(val_split={Config.VAL_SPLIT:.0%})"
+        )
+
     # ---- DataLoader (with DistributedSampler for proper shuffle) -------------
     train_sampler = DistributedSampler(
-        mixed_dataset,
+        train_dataset,
         num_replicas=accelerator.num_processes,
         rank=accelerator.process_index,
-        shuffle=True,           # shuffles across ALL combined samples each epoch
+        shuffle=True,
+    )
+    val_sampler = DistributedSampler(
+        val_dataset,
+        num_replicas=accelerator.num_processes,
+        rank=accelerator.process_index,
+        shuffle=False,   # no shuffle for val
     )
 
     train_loader = DataLoader(
-        mixed_dataset,
+        train_dataset,
         batch_size=Config.BATCH_SIZE,
         sampler=train_sampler,
-        collate_fn=lambda batch: batch,  # pass raw tuples; collate_batch handles them
+        collate_fn=lambda batch: batch,
+        num_workers=0,
+        pin_memory=False,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=Config.BATCH_SIZE,
+        sampler=val_sampler,
+        collate_fn=lambda batch: batch,
         num_workers=0,
         pin_memory=False,
     )
 
     if accelerator.is_main_process:
-        logger.info(f"Total samples: {len(mixed_dataset):,} | Batches/GPU: {len(train_loader)}")
+        logger.info(f"Train batches/GPU: {len(train_loader)} | Val batches/GPU: {len(val_loader)}")
 
     # ---- Optimizer & Scheduler -----------------------------------------------
     optimizer = AdamW(model.parameters(), lr=Config.LEARNING_RATE, weight_decay=0.01)
@@ -530,48 +773,71 @@ def main():
     if accelerator.is_main_process:
         logger.info(f"Optimizer: AdamW | total_steps={total_steps} | warmup={warmup_steps}")
 
-    model, optimizer, lr_scheduler = accelerator.prepare(model, optimizer, lr_scheduler)
+    model, optimizer, lr_scheduler, train_loader, val_loader = accelerator.prepare(
+        model, optimizer, lr_scheduler, train_loader, val_loader
+    )
 
     # ---- Training loop -------------------------------------------------------
-    all_losses = []
+    all_train_losses = []
+    all_val_losses   = []
     global_step = 0
 
     try:
         for epoch in range(Config.EPOCHS):
-            train_sampler.set_epoch(epoch)   # ensures different shuffle each epoch
+            train_sampler.set_epoch(epoch)
 
             epoch_losses = []
-            avg_loss = train_epoch(
+            avg_train_loss = train_epoch(
                 model, train_loader, optimizer, lr_scheduler,
                 accelerator, epoch, processor, epoch_losses, global_step, logger,
             )
             global_step += len(train_loader)
+
+            # ---- Validation --------------------------------------------------
+            avg_val_loss = validate_epoch(
+                model, val_loader, processor, accelerator, epoch, logger
+            )
             accelerator.wait_for_everyone()
 
             if accelerator.is_main_process:
-                all_losses.extend(epoch_losses)
-                ckpt_dir = os.path.join(Config.model_output_dir, f"checkpoint_epoch_{epoch + 1}")
-                save_model_checkpoint(model, processor, epoch, avg_loss, accelerator, output_dir=Config.model_output_dir)
-                if all_losses:
+                all_train_losses.extend(epoch_losses)
+                all_val_losses.append(avg_val_loss)
+
+                logger.info(
+                    f"Epoch {epoch + 1} Summary — "
+                    f"train_loss={avg_train_loss:.4f}  val_loss={avg_val_loss:.4f}"
+                )
+
+                # Per-epoch loss file (CSV + JSON)
+                save_epoch_losses(epoch, avg_train_loss, avg_val_loss, Config.log_dir)
+
+                save_model_checkpoint(
+                    model, processor, epoch, avg_train_loss, accelerator,
+                    output_dir=Config.model_output_dir,
+                )
+                if all_train_losses:
                     curve_path = os.path.join(Config.log_dir, f"loss_curve_epoch_{epoch + 1}.png")
-                    plot_loss_curve(all_losses, curve_path)
+                    plot_loss_curve(all_train_losses, curve_path)
+                if all_val_losses:
+                    val_curve_path = os.path.join(Config.log_dir, f"val_loss_curve_epoch_{epoch + 1}.png")
+                    plot_loss_curve(all_val_losses, val_curve_path)
                 logger.info(f"Checkpoint saved — epoch {epoch + 1}")
 
     except KeyboardInterrupt:
         if accelerator.is_main_process:
             logger.info("Training interrupted by user")
-            save_loss_log(all_losses, os.path.join(Config.log_dir, "loss_log_interrupted.txt"))
-            if all_losses:
-                plot_loss_curve(all_losses, os.path.join(Config.log_dir, "loss_curve_interrupted.png"))
+            save_loss_log(all_train_losses, os.path.join(Config.log_dir, "loss_log_interrupted.txt"))
+            if all_train_losses:
+                plot_loss_curve(all_train_losses, os.path.join(Config.log_dir, "loss_curve_interrupted.png"))
         return
 
     except Exception as e:
         if accelerator.is_main_process:
             import traceback
             logger.error(f"Training failed: {e}\n{traceback.format_exc()}")
-            save_loss_log(all_losses, os.path.join(Config.log_dir, "loss_log_error.txt"))
-            if all_losses:
-                plot_loss_curve(all_losses, os.path.join(Config.log_dir, "loss_curve_error.png"))
+            save_loss_log(all_train_losses, os.path.join(Config.log_dir, "loss_log_error.txt"))
+            if all_train_losses:
+                plot_loss_curve(all_train_losses, os.path.join(Config.log_dir, "loss_curve_error.png"))
         return
 
     # ---- Final model save ----------------------------------------------------
@@ -583,9 +849,11 @@ def main():
         unwrapped = accelerator.unwrap_model(model)
         unwrapped.save_pretrained(final_dir)
         processor.save_pretrained(final_dir)
-        save_loss_log(all_losses, os.path.join(Config.log_dir, "loss_log_final.txt"))
-        if all_losses:
-            plot_loss_curve(all_losses, os.path.join(Config.log_dir, "loss_curve_final.png"))
+        save_loss_log(all_train_losses, os.path.join(Config.log_dir, "loss_log_final.txt"))
+        if all_train_losses:
+            plot_loss_curve(all_train_losses, os.path.join(Config.log_dir, "loss_curve_final.png"))
+        if all_val_losses:
+            plot_loss_curve(all_val_losses, os.path.join(Config.log_dir, "val_loss_curve_final.png"))
         logger.info("=" * 50)
         logger.info("Training completed successfully!")
         logger.info("=" * 50)

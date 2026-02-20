@@ -1,6 +1,6 @@
 # Florence-2 Multi-Dataset Training
 
-Fine-tune Florence-2 on any combination of four dataset types using `accelerate launch`.
+Fine-tune Florence-2 on any combination of five dataset types using `accelerate launch`.
 
 ---
 
@@ -12,6 +12,7 @@ Fine-tune Florence-2 on any combination of four dataset types using `accelerate 
 | `--use-info` | InfoDataset | CSV (`info.csv`) |
 | `--use-amex-od` | AMEX Object Detection | JSON |
 | `--use-amex-ui` | AMEX UI Action | JSON |
+| `--use-vqa` | Visual Question Answering | JSON |
 
 ---
 
@@ -35,6 +36,16 @@ Fine-tune Florence-2 on any combination of four dataset types using `accelerate 
 }
 ```
 > `click` is automatically prepended to the suffix: `click <loc_525><loc_425><loc_671><loc_492>`
+
+**VQA:**
+```json
+{
+  "image":  "img_0077571.png",
+  "prefix": "<VQA> What is the age of Japtko?",
+  "suffix": "Japtko is 29 years old.<loc_373><loc_211><loc_413><loc_238>"
+}
+```
+> Prefix must begin with `<VQA>`. Suffix is a free-form answer, optionally followed by `<loc_*>` coordinates.
 
 ---
 
@@ -91,7 +102,30 @@ accelerate launch train.py \
   --output-dir ./runs/all_mixed
 ```
 
-### 6 — Test / smoke-test (tiny run)
+### 6 — VQA only
+```bash
+accelerate launch train.py \
+  --use-vqa \
+  --vqa-json    /data/vqa.json \
+  --vqa-images  /data/vqa_images \
+  --batch-size 4 --epochs 5 \
+  --output-dir ./runs/vqa
+```
+
+### 7 — All five datasets, capped at 10 000 each
+```bash
+accelerate launch train.py \
+  --use-action  --action-csv  /data/action.csv  --action-images /data/imgs \
+  --use-info    --info-csv    /data/info.csv \
+  --use-amex-od --amex-od-json /data/od.json   --amex-od-images /data/od \
+  --use-amex-ui --amex-ui-json /data/ui.json   --amex-ui-images /data/ui \
+  --use-vqa     --vqa-json    /data/vqa.json   --vqa-images /data/vqa \
+  --max-action 10000 --max-info 10000 --max-amex-od 10000 --max-amex-ui 10000 --max-vqa 10000 \
+  --batch-size 4 --epochs 5 \
+  --output-dir ./runs/all_mixed
+```
+
+### 8 — Test / smoke-test (tiny run)
 ```bash
 python train.py \
   --use-amex-od --amex-od-json /data/od.json --amex-od-images /data/od_imgs \
@@ -121,6 +155,7 @@ python train.py \
 | `--use-info` | — | Enable InfoDataset (CSV) |
 | `--use-amex-od` | — | Enable AMEX OD JSON dataset |
 | `--use-amex-ui` | — | Enable AMEX UI Action JSON dataset |
+| `--use-vqa` | — | Enable VQA JSON dataset |
 | **Dataset paths** | | |
 | `--action-csv` | `./data/action.csv` | Action CSV file path |
 | `--action-images` | `./data/images` | Image dir for action + info datasets |
@@ -129,14 +164,18 @@ python train.py \
 | `--amex-od-images` | `./data/amex_od_images` | AMEX OD image directory |
 | `--amex-ui-json` | `./data/amex_ui_action.json` | AMEX UI Action annotations JSON |
 | `--amex-ui-images` | `./data/amex_ui_action_images` | AMEX UI Action image directory |
+| `--vqa-json` | `./data/vqa.json` | VQA annotations JSON |
+| `--vqa-images` | `./data/vqa_images` | VQA image directory |
 | **Sample caps** | | |
 | `--max-action` | None (all) | Max samples from ActionDataset |
 | `--max-info` | None (all) | Max samples from InfoDataset |
 | `--max-amex-od` | None (all) | Max samples from AMEX OD dataset |
 | `--max-amex-ui` | None (all) | Max samples from AMEX UI dataset |
-| **Debug** | | |
+| `--max-vqa` | None (all) | Max samples from VQA dataset |
+| **Debug / Validation** | | |
 | `--test-mode` | — | Use only a small sample slice |
 | `--test-samples` | `64` | Size of test slice |
+| `--val-split` | `0.1` | Fraction of data held out for validation |
 
 ---
 
@@ -149,24 +188,31 @@ python train.py \
     model.safetensors
     preprocessor_config.json
     ...
-    meta.json          ← {epoch, avg_loss}
+    meta.json               ← {epoch, avg_loss}
   checkpoint_epoch_2/
   ...
-  final/              ← best/last model for inference
+  final/                   ← final model for inference
 
 <log-dir>/
-  training.log
-  loss_log_final.txt
-  loss_curve_final.png
-  loss_curve_epoch_1.png
+  training.log             ← full debug log
+  epoch_losses.csv         ← running CSV: epoch,train_loss,val_loss
+  epoch_1_losses.json      ← per-epoch snapshot: {epoch, train_loss, val_loss}
+  epoch_2_losses.json
   ...
+  loss_log_final.txt       ← step-level train losses
+  loss_curve_epoch_1.png   ← train loss curve (cumulative up to epoch N)
+  val_loss_curve_epoch_1.png  ← val loss curve (one point per epoch)
+  ...
+  loss_curve_final.png
+  val_loss_curve_final.png
 ```
 
 ---
 
 ## Notes
 
-- All four datasets are shuffled together via `DistributedSampler(shuffle=True)` — each epoch produces a completely different interleaved order.
+- All datasets are shuffled together via `DistributedSampler(shuffle=True)` — each epoch produces a different interleaved order.
 - Sample caps (`--max-*`) are applied **before** combining, so you can balance datasets easily.
-- The script validates that at least one dataset flag is set and will exit with a clear error if none are provided.
-- `train.py` imports `from Config import Config` — the file must be named `Config.py` (capital C) or `config.py` (Python is case-insensitive on Windows).
+- The val split (`--val-split`, default `0.1`) is applied **after** merging all datasets with a fixed random seed (42) for reproducibility.
+- Per-epoch loss files (`epoch_N_losses.json` and `epoch_losses.csv`) are written immediately after each epoch so progress is visible even if training is interrupted.
+- `train.py` imports `from Config import Config` — the file must be named `Config.py` or `config.py`.

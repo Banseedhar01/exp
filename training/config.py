@@ -16,7 +16,7 @@ class Config:
     FREEZE_VISION_ENCODER: bool = False
 
     # Custom task tokens added to the tokenizer/embeddings via add_custom_tokens()
-    CUSTOM_TASK_TOKENS: list = ["<UI_ACTION>", "<OD>", "<CAPTION>", "<EXPECTATIONS>"]
+    CUSTOM_TASK_TOKENS: list = ["<UI_ACTION>", "<OD>", "<CAPTION>", "<EXPECTATIONS>", "<VQA>"]
 
     # ------------------------------------------------------------------
     # Training hyper-parameters
@@ -58,6 +58,9 @@ class Config:
     amex_ui_action_json: str = "./data/amex_ui_action.json"
     amex_ui_action_image_dir: str = "./data/amex_ui_action_images"
 
+    vqa_json: str = "./data/vqa.json"
+    vqa_image_dir: str = "./data/vqa_images"
+
     # ------------------------------------------------------------------
     # Dataset selection flags
     # ------------------------------------------------------------------
@@ -65,6 +68,7 @@ class Config:
     USE_INFO: bool = False
     USE_AMEX_OD: bool = False
     USE_AMEX_UI_ACTION: bool = False
+    USE_VQA: bool = False
 
     # ------------------------------------------------------------------
     # Per-dataset sample caps  (None = no limit)
@@ -73,6 +77,12 @@ class Config:
     MAX_INFO: int = None
     MAX_AMEX_OD: int = None
     MAX_AMEX_UI_ACTION: int = None
+    MAX_VQA: int = None
+
+    # ------------------------------------------------------------------
+    # Validation split
+    # ------------------------------------------------------------------
+    VAL_SPLIT: float = 0.1          # fraction of combined data held out for validation
 
     # ------------------------------------------------------------------
     # Test / debug mode
