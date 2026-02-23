@@ -16,7 +16,19 @@ class Config:
     FREEZE_VISION_ENCODER: bool = False
 
     # Custom task tokens added to the tokenizer/embeddings via add_custom_tokens()
-    CUSTOM_TASK_TOKENS: list = ["<UI_ACTION>", "<OD>", "<CAPTION>", "<EXPECTATIONS>", "<VQA>"]
+    CUSTOM_TASK_TOKENS: list = [
+        "<UI_ACTION>",
+        "<OD>",
+        "<CAPTION>",
+        "<EXPECTATIONS>",
+        "<VQA>",
+        # AMEX purpose / expectation task tokens
+        "<UI_PURPOSE>",
+        "<UI_EXPECTATIONS>",
+        # InfoDataset task tokens
+        "<UI_CAPTION>",
+        "<UI_EXPECTATION>",
+    ]
 
     # ------------------------------------------------------------------
     # Training hyper-parameters
@@ -61,6 +73,12 @@ class Config:
     vqa_json: str = "./data/vqa.json"
     vqa_image_dir: str = "./data/vqa_images"
 
+    amex_purpose_json: str = "./data/amex_purpose.json"
+    amex_purpose_image_dir: str = "./data/amex_purpose_images"
+
+    amex_expectation_json: str = "./data/amex_expectation.json"
+    amex_expectation_image_dir: str = "./data/amex_expectation_images"
+
     # ------------------------------------------------------------------
     # Dataset selection flags
     # ------------------------------------------------------------------
@@ -69,6 +87,8 @@ class Config:
     USE_AMEX_OD: bool = False
     USE_AMEX_UI_ACTION: bool = False
     USE_VQA: bool = False
+    USE_AMEX_PURPOSE: bool = False
+    USE_AMEX_EXPECTATION: bool = False
 
     # ------------------------------------------------------------------
     # Per-dataset sample caps  (None = no limit)
@@ -78,6 +98,8 @@ class Config:
     MAX_AMEX_OD: int = None
     MAX_AMEX_UI_ACTION: int = None
     MAX_VQA: int = None
+    MAX_AMEX_PURPOSE: int = None
+    MAX_AMEX_EXPECTATION: int = None
 
     # ------------------------------------------------------------------
     # Validation split

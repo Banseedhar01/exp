@@ -1,12 +1,14 @@
 """
 train.py — Florence-2 multi-GPU training script with multi-dataset support.
 
-Supports five dataset types:
-  - action       : existing ActionDataset  (CSV)
-  - info         : existing InfoDataset    (CSV)
-  - amex_od      : AMEX Object Detection   (JSON)
-  - amex_ui      : AMEX UI Action          (JSON)
-  - vqa          : Visual Question Answering (JSON)
+Supports seven dataset types:
+  - action            : existing ActionDataset  (CSV)
+  - info              : existing InfoDataset    (CSV)
+  - amex_od           : AMEX Object Detection   (JSON)
+  - amex_ui           : AMEX UI Action          (JSON)
+  - vqa               : Visual Question Answering (JSON)
+  - amex_purpose      : AMEX UI Purpose         (JSON)
+  - amex_expectation  : AMEX UI Expectation     (JSON)
 
 Any combination can be enabled via CLI flags.  Datasets are concatenated and
 shuffled together via DistributedSampler so multi-task batches are well-mixed.
@@ -23,14 +25,17 @@ Example usage:
         --use-vqa --vqa-json /data/vqa.json --vqa-images /data/vqa_images \\
         --batch-size 4 --epochs 5 --output-dir ./runs/vqa
 
-    # Train on all five datasets, cap each at 10 000 samples
+    # Train on all seven datasets, cap each at 10 000 samples
     accelerate launch train.py \\
-        --use-action  --action-csv /data/action.csv  --action-images /data/imgs \\
-        --use-info    --info-csv   /data/info.csv                                \\
-        --use-amex-od --amex-od-json /data/od.json   --amex-od-images /data/od  \\
-        --use-amex-ui --amex-ui-json /data/ui.json   --amex-ui-images /data/ui  \\
-        --use-vqa     --vqa-json    /data/vqa.json   --vqa-images /data/vqa     \\
-        --max-action 10000 --max-info 10000 --max-amex-od 10000 --max-amex-ui 10000 --max-vqa 10000
+        --use-action  --action-csv /data/action.csv  --action-images /data/imgs  \\
+        --use-info    --info-csv   /data/info.csv                                 \\
+        --use-amex-od --amex-od-json /data/od.json   --amex-od-images /data/od   \\
+        --use-amex-ui --amex-ui-json /data/ui.json   --amex-ui-images /data/ui   \\
+        --use-vqa     --vqa-json    /data/vqa.json   --vqa-images /data/vqa      \\
+        --use-amex-purpose      --amex-purpose-json /data/pur.json   --amex-purpose-images /data/pur_imgs      \\
+        --use-amex-expectation  --amex-expectation-json /data/exp.json --amex-expectation-images /data/exp_imgs \\
+        --max-action 10000 --max-info 10000 --max-amex-od 10000 --max-amex-ui 10000 --max-vqa 10000 \\
+        --max-amex-purpose 10000 --max-amex-expectation 10000
 """
 
 import os
@@ -85,29 +90,37 @@ def parse_args():
     parser.add_argument("--no-resize",      action="store_true",                           help="Disable image resizing")
 
     # -- Dataset enable flags --
-    parser.add_argument("--use-action",   action="store_true", help="Enable existing ActionDataset (CSV)")
-    parser.add_argument("--use-info",     action="store_true", help="Enable existing InfoDataset (CSV)")
-    parser.add_argument("--use-amex-od",  action="store_true", help="Enable AMEX OD JSON dataset")
-    parser.add_argument("--use-amex-ui",  action="store_true", help="Enable AMEX UI Action JSON dataset")
-    parser.add_argument("--use-vqa",      action="store_true", help="Enable VQA JSON dataset")
+    parser.add_argument("--use-action",           action="store_true", help="Enable existing ActionDataset (CSV)")
+    parser.add_argument("--use-info",             action="store_true", help="Enable existing InfoDataset (CSV)")
+    parser.add_argument("--use-amex-od",          action="store_true", help="Enable AMEX OD JSON dataset")
+    parser.add_argument("--use-amex-ui",          action="store_true", help="Enable AMEX UI Action JSON dataset")
+    parser.add_argument("--use-vqa",              action="store_true", help="Enable VQA JSON dataset")
+    parser.add_argument("--use-amex-purpose",     action="store_true", help="Enable AMEX UI Purpose JSON dataset")
+    parser.add_argument("--use-amex-expectation", action="store_true", help="Enable AMEX UI Expectation JSON dataset")
 
     # -- Dataset paths --
-    parser.add_argument("--action-csv",    default=Config.commands_path,         help="Path to action CSV file")
-    parser.add_argument("--action-images", default=Config.image_dir,             help="Image directory for action/info datasets")
-    parser.add_argument("--info-csv",      default=Config.info_path,             help="Path to info CSV file")
-    parser.add_argument("--amex-od-json",    default=Config.amex_od_json,        help="Path to AMEX OD annotations JSON")
-    parser.add_argument("--amex-od-images",  default=Config.amex_od_image_dir,   help="Image directory for AMEX OD dataset")
-    parser.add_argument("--amex-ui-json",    default=Config.amex_ui_action_json, help="Path to AMEX UI Action annotations JSON")
-    parser.add_argument("--amex-ui-images",  default=Config.amex_ui_action_image_dir, help="Image directory for AMEX UI Action dataset")
-    parser.add_argument("--vqa-json",        default=Config.vqa_json,            help="Path to VQA annotations JSON")
-    parser.add_argument("--vqa-images",      default=Config.vqa_image_dir,       help="Image directory for VQA dataset")
+    parser.add_argument("--action-csv",    default=Config.commands_path,             help="Path to action CSV file")
+    parser.add_argument("--action-images", default=Config.image_dir,                 help="Image directory for action/info datasets")
+    parser.add_argument("--info-csv",      default=Config.info_path,                 help="Path to info CSV file")
+    parser.add_argument("--amex-od-json",          default=Config.amex_od_json,              help="Path to AMEX OD annotations JSON")
+    parser.add_argument("--amex-od-images",        default=Config.amex_od_image_dir,         help="Image directory for AMEX OD dataset")
+    parser.add_argument("--amex-ui-json",          default=Config.amex_ui_action_json,       help="Path to AMEX UI Action annotations JSON")
+    parser.add_argument("--amex-ui-images",        default=Config.amex_ui_action_image_dir,  help="Image directory for AMEX UI Action dataset")
+    parser.add_argument("--vqa-json",              default=Config.vqa_json,                  help="Path to VQA annotations JSON")
+    parser.add_argument("--vqa-images",            default=Config.vqa_image_dir,             help="Image directory for VQA dataset")
+    parser.add_argument("--amex-purpose-json",     default=Config.amex_purpose_json,         help="Path to AMEX Purpose annotations JSON")
+    parser.add_argument("--amex-purpose-images",   default=Config.amex_purpose_image_dir,    help="Image directory for AMEX Purpose dataset")
+    parser.add_argument("--amex-expectation-json",   default=Config.amex_expectation_json,       help="Path to AMEX Expectation annotations JSON")
+    parser.add_argument("--amex-expectation-images", default=Config.amex_expectation_image_dir,  help="Image directory for AMEX Expectation dataset")
 
     # -- Per-dataset sample caps --
-    parser.add_argument("--max-action",   type=int, default=None, help="Max samples from ActionDataset (default: all)")
-    parser.add_argument("--max-info",     type=int, default=None, help="Max samples from InfoDataset (default: all)")
-    parser.add_argument("--max-amex-od",  type=int, default=None, help="Max samples from AMEX OD dataset (default: all)")
-    parser.add_argument("--max-amex-ui",  type=int, default=None, help="Max samples from AMEX UI Action dataset (default: all)")
-    parser.add_argument("--max-vqa",      type=int, default=None, help="Max samples from VQA dataset (default: all)")
+    parser.add_argument("--max-action",          type=int, default=None, help="Max samples from ActionDataset (default: all)")
+    parser.add_argument("--max-info",            type=int, default=None, help="Max samples from InfoDataset (default: all)")
+    parser.add_argument("--max-amex-od",         type=int, default=None, help="Max samples from AMEX OD dataset (default: all)")
+    parser.add_argument("--max-amex-ui",         type=int, default=None, help="Max samples from AMEX UI Action dataset (default: all)")
+    parser.add_argument("--max-vqa",             type=int, default=None, help="Max samples from VQA dataset (default: all)")
+    parser.add_argument("--max-amex-purpose",    type=int, default=None, help="Max samples from AMEX Purpose dataset (default: all)")
+    parser.add_argument("--max-amex-expectation",type=int, default=None, help="Max samples from AMEX Expectation dataset (default: all)")
 
     # -- Test / debug --
     parser.add_argument("--test-mode",    action="store_true",              help="Enable test mode (small dataset slice)")
@@ -135,6 +148,8 @@ def apply_args_to_config(args):
     Config.USE_AMEX_OD               = args.use_amex_od
     Config.USE_AMEX_UI_ACTION        = args.use_amex_ui
     Config.USE_VQA                   = args.use_vqa
+    Config.USE_AMEX_PURPOSE          = args.use_amex_purpose
+    Config.USE_AMEX_EXPECTATION      = args.use_amex_expectation
     Config.commands_path             = args.action_csv
     Config.image_dir                 = args.action_images
     Config.info_path                 = args.info_csv
@@ -144,11 +159,17 @@ def apply_args_to_config(args):
     Config.amex_ui_action_image_dir  = args.amex_ui_images
     Config.vqa_json                  = args.vqa_json
     Config.vqa_image_dir             = args.vqa_images
+    Config.amex_purpose_json         = args.amex_purpose_json
+    Config.amex_purpose_image_dir    = args.amex_purpose_images
+    Config.amex_expectation_json        = args.amex_expectation_json
+    Config.amex_expectation_image_dir   = args.amex_expectation_images
     Config.MAX_ACTION                = args.max_action
     Config.MAX_INFO                  = args.max_info
     Config.MAX_AMEX_OD               = args.max_amex_od
     Config.MAX_AMEX_UI_ACTION        = args.max_amex_ui
     Config.MAX_VQA                   = args.max_vqa
+    Config.MAX_AMEX_PURPOSE          = args.max_amex_purpose
+    Config.MAX_AMEX_EXPECTATION      = args.max_amex_expectation
     Config.TEST_MODE                 = args.test_mode
     Config.TEST_SAMPLE_SIZE          = args.test_samples
     Config.VAL_SPLIT                 = args.val_split
@@ -349,10 +370,45 @@ def load_datasets(logger):
         counts["vqa"] = len(raw)
         logger.info(f"[Loader] VQA             → {len(raw):,} samples")
 
+    # ---- AMEX Purpose Dataset -----------------------------------------------
+    if Config.USE_AMEX_PURPOSE:
+        from DataUtils.AmexPurposeDataset import AmexPurposeDataset
+        logger.info("[Loader] Loading AMEX Purpose Dataset …")
+        ds = AmexPurposeDataset(
+            json_path=Config.amex_purpose_json,
+            image_dir=Config.amex_purpose_image_dir,
+            max_samples=Config.MAX_AMEX_PURPOSE,
+        )
+        raw = ds.getData()
+        if Config.TEST_MODE:
+            raw = raw[: Config.TEST_SAMPLE_SIZE]
+
+        datasets_with_loaders.append((raw, ds.load_image))
+        counts["amex_purpose"] = len(raw)
+        logger.info(f"[Loader] AMEX Purpose    → {len(raw):,} samples")
+
+    # ---- AMEX Expectation Dataset --------------------------------------------
+    if Config.USE_AMEX_EXPECTATION:
+        from DataUtils.AmexExpectationDataset import AmexExpectationDataset
+        logger.info("[Loader] Loading AMEX Expectation Dataset …")
+        ds = AmexExpectationDataset(
+            json_path=Config.amex_expectation_json,
+            image_dir=Config.amex_expectation_image_dir,
+            max_samples=Config.MAX_AMEX_EXPECTATION,
+        )
+        raw = ds.getData()
+        if Config.TEST_MODE:
+            raw = raw[: Config.TEST_SAMPLE_SIZE]
+
+        datasets_with_loaders.append((raw, ds.load_image))
+        counts["amex_expectation"] = len(raw)
+        logger.info(f"[Loader] AMEX Expectation → {len(raw):,} samples")
+
     if not datasets_with_loaders:
         raise ValueError(
             "No datasets enabled! Use at least one of: "
-            "--use-action, --use-info, --use-amex-od, --use-amex-ui, --use-vqa"
+            "--use-action, --use-info, --use-amex-od, --use-amex-ui, --use-vqa, "
+            "--use-amex-purpose, --use-amex-expectation"
         )
 
     mixed = MixedFlorenceDataset(datasets_with_loaders)
