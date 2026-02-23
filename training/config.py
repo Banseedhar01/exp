@@ -19,15 +19,10 @@ class Config:
     CUSTOM_TASK_TOKENS: list = [
         "<UI_ACTION>",
         "<OD>",
-        "<CAPTION>",
-        "<EXPECTATIONS>",
         "<VQA>",
-        # AMEX purpose / expectation task tokens
         "<UI_PURPOSE>",
         "<UI_EXPECTATIONS>",
-        # InfoDataset task tokens
         "<UI_CAPTION>",
-        "<UI_EXPECTATION>",
     ]
 
     # ------------------------------------------------------------------
