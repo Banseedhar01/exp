@@ -4,9 +4,9 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 
-class AmexODDataset:
+class LayoutODDataset:
     """
-    Dataset processor for AMEX Object Detection (OD) annotations.
+    Dataset processor for Layout Object Detection (OD) annotations.
 
     Expected JSON format (list of records):
     {
@@ -50,7 +50,7 @@ class AmexODDataset:
                 with open(json_path, "r", encoding="utf-8") as f:
                     raw_data = json.load(f)
             except Exception as e:
-                print(f"[AmexODDataset] ERROR reading {json_path}: {e}")
+                print(f"[LayoutODDataset] ERROR reading {json_path}: {e}")
                 raw_data = []
 
             file_total = len(raw_data)
@@ -76,7 +76,7 @@ class AmexODDataset:
             grand_skipped += file_skipped
             self.preprocessed_data.extend(file_samples)
             print(
-                f"[AmexODDataset] Loaded '{json_path}': "
+                f"[LayoutODDataset] Loaded '{json_path}': "
                 f"{len(file_samples):,} samples "
                 f"(skipped {file_skipped:,} / {file_total:,})"
             )
@@ -87,12 +87,12 @@ class AmexODDataset:
 
         loaded = len(self.preprocessed_data)
         print(
-            f"[AmexODDataset] --- Summary ---\n"
-            f"[AmexODDataset] JSON files  : {len(self.json_paths)}\n"
-            f"[AmexODDataset] Image dir   : {self.image_dir}\n"
-            f"[AmexODDataset] Total records  : {grand_total:,}\n"
-            f"[AmexODDataset] Skipped (empty) : {grand_skipped:,}\n"
-            f"[AmexODDataset] Loaded samples  : {loaded:,}"
+            f"[LayoutODDataset] --- Summary ---\n"
+            f"[LayoutODDataset] JSON files  : {len(self.json_paths)}\n"
+            f"[LayoutODDataset] Image dir   : {self.image_dir}\n"
+            f"[LayoutODDataset] Total records  : {grand_total:,}\n"
+            f"[LayoutODDataset] Skipped (empty) : {grand_skipped:,}\n"
+            f"[LayoutODDataset] Loaded samples  : {loaded:,}"
             + (f" (capped from {grand_total - grand_skipped:,})" if self.max_samples and loaded < grand_total - grand_skipped else "")
         )
 
@@ -106,7 +106,7 @@ class AmexODDataset:
         try:
             return Image.open(image_path).convert("RGB")
         except Exception as e:
-            print(f"[AmexODDataset] WARNING: Could not load image '{image_path}': {e}")
+            print(f"[LayoutODDataset] WARNING: Could not load image '{image_path}': {e}")
             return Image.new("RGB", (224, 224), color="white")
 
     def getData(self):
@@ -127,14 +127,14 @@ class AmexODDataset:
 # PyTorch Dataset wrapper
 # ---------------------------------------------------------------------------
 
-class FlorenceAmexODDataset(Dataset):
-    """PyTorch Dataset wrapper for AmexODDataset — lazy image loading at collate time."""
+class FlorenceLayoutODDataset(Dataset):
+    """PyTorch Dataset wrapper for LayoutODDataset — lazy image loading at collate time."""
 
-    def __init__(self, amex_od_dataset: AmexODDataset):
-        self.dataset = amex_od_dataset
-        self.data = amex_od_dataset.getData()
+    def __init__(self, layout_od_dataset: LayoutODDataset):
+        self.dataset = layout_od_dataset
+        self.data = layout_od_dataset.getData()
         print(
-            f"[FlorenceAmexODDataset] Initialized with {len(self.data):,} samples"
+            f"[FlorenceLayoutODDataset] Initialized with {len(self.data):,} samples"
         )
 
     def __len__(self):

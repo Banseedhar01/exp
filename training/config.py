@@ -59,7 +59,7 @@ class Config:
     # ------------------------------------------------------------------
     # AMEX datasets (JSON-based)
     # ------------------------------------------------------------------
-    amex_od_json: str = "./data/amex_od.json"
+    amex_od_json: list = ["./data/amex_od.json"]              # supports multiple JSON files
     amex_od_image_dir: str = "./data/amex_od_images"
 
     amex_ui_action_json: list = ["./data/amex_ui_action.json"]   # supports multiple JSON files
@@ -74,6 +74,9 @@ class Config:
     amex_expectation_json: str = "./data/amex_expectation.json"
     amex_expectation_image_dir: str = "./data/amex_expectation_images"
 
+    layout_od_json: list = ["./data/layout_od.json"]             # supports multiple JSON files
+    layout_od_image_dir: str = "./data/layout_od_images"
+
     # ------------------------------------------------------------------
     # Dataset selection flags
     # ------------------------------------------------------------------
@@ -84,6 +87,7 @@ class Config:
     USE_VQA: bool = False
     USE_AMEX_PURPOSE: bool = False
     USE_AMEX_EXPECTATION: bool = False
+    USE_LAYOUT_OD: bool = False
 
     # ------------------------------------------------------------------
     # Per-dataset sample caps  (None = no limit)
@@ -95,6 +99,7 @@ class Config:
     MAX_VQA: int = None
     MAX_AMEX_PURPOSE: int = None
     MAX_AMEX_EXPECTATION: int = None
+    MAX_LAYOUT_OD: int = None
 
     # ------------------------------------------------------------------
     # Validation split
