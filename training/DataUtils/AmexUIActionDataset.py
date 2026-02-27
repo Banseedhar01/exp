@@ -20,16 +20,18 @@ class AmexUIActionDataset:
       format: "click <loc_x1><loc_y1><loc_x2><loc_y2>"
     - The prefix already contains the <UI_ACTION> token — used directly.
     - image_dir: directory containing all image files.
+    - json_path: a single JSON file path (str) OR a list of paths for multi-file input.
     """
 
-    def __init__(self, json_path: str, image_dir: str, max_samples: int = None):
+    def __init__(self, json_path, image_dir: str, max_samples: int = None):
         """
         Args:
-            json_path:   Path to the annotations JSON file.
+            json_path:   Path to annotations JSON file, or a list of such paths.
             image_dir:   Directory containing image files referenced by "image" field.
-            max_samples: Optional cap on number of samples to load (applied after load).
+            max_samples: Optional cap on total number of samples (applied after merging all files).
         """
-        self.json_path = json_path
+        # Normalise to list so the rest of the code is uniform
+        self.json_paths = [json_path] if isinstance(json_path, str) else list(json_path)
         self.image_dir = image_dir
         self.max_samples = max_samples
         self.preprocessed_data = None
@@ -40,50 +42,65 @@ class AmexUIActionDataset:
     # ------------------------------------------------------------------
 
     def _load_and_preprocess(self):
-        """Load the JSON file and build the preprocessed sample list."""
-        try:
-            with open(self.json_path, "r", encoding="utf-8") as f:
-                raw_data = json.load(f)
-        except Exception as e:
-            print(f"[AmexUIActionDataset] ERROR reading {self.json_path}: {e}")
-            raw_data = []
-
-        total = len(raw_data)
-        skipped = 0
+        """Load all JSON files and merge into a single preprocessed sample list."""
         self.preprocessed_data = []
+        grand_total = 0
+        grand_skipped = 0
 
-        for record in raw_data:
-            image_name = record.get("image", "").strip()
-            prefix = record.get("prefix", "").strip()
-            suffix = record.get("suffix", "").strip()
+        for json_path in self.json_paths:
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    raw_data = json.load(f)
+            except Exception as e:
+                print(f"[AmexUIActionDataset] ERROR reading {json_path}: {e}")
+                raw_data = []
 
-            if not image_name or not prefix or not suffix:
-                skipped += 1
-                continue
+            file_total = len(raw_data)
+            file_skipped = 0
+            file_samples = []
 
-            # Prepend 'click' to the coordinate suffix to match the existing
-            # ActionDataset suffix style: "click <loc_x1><loc_y1><loc_x2><loc_y2>"
-            if not suffix.lower().startswith("click"):
-                suffix = f"click {suffix}"
+            for record in raw_data:
+                image_name = record.get("image", "").strip()
+                prefix = record.get("prefix", "").strip()
+                suffix = record.get("suffix", "").strip()
 
-            self.preprocessed_data.append({
-                "image_id": image_name,
-                "prefix":   prefix,
-                "suffix":   suffix,
-            })
+                if not image_name or not prefix or not suffix:
+                    file_skipped += 1
+                    continue
 
-        # Apply optional sample cap
+                # Prepend 'click' to the coordinate suffix to match the existing
+                # ActionDataset suffix style: "click <loc_x1><loc_y1><loc_x2><loc_y2>"
+                if not suffix.lower().startswith("click"):
+                    suffix = f"click {suffix}"
+
+                file_samples.append({
+                    "image_id": image_name,
+                    "prefix":   prefix,
+                    "suffix":   suffix,
+                })
+
+            grand_total += file_total
+            grand_skipped += file_skipped
+            self.preprocessed_data.extend(file_samples)
+            print(
+                f"[AmexUIActionDataset] Loaded '{json_path}': "
+                f"{len(file_samples):,} samples "
+                f"(skipped {file_skipped:,} / {file_total:,})"
+            )
+
+        # Apply optional sample cap across the merged dataset
         if self.max_samples is not None and self.max_samples > 0:
             self.preprocessed_data = self.preprocessed_data[: self.max_samples]
 
         loaded = len(self.preprocessed_data)
         print(
-            f"[AmexUIActionDataset] JSON path : {self.json_path}\n"
-            f"[AmexUIActionDataset] Image dir : {self.image_dir}\n"
-            f"[AmexUIActionDataset] Total records  : {total:,}\n"
-            f"[AmexUIActionDataset] Skipped (empty) : {skipped:,}\n"
+            f"[AmexUIActionDataset] --- Summary ---\n"
+            f"[AmexUIActionDataset] JSON files  : {len(self.json_paths)}\n"
+            f"[AmexUIActionDataset] Image dir   : {self.image_dir}\n"
+            f"[AmexUIActionDataset] Total records  : {grand_total:,}\n"
+            f"[AmexUIActionDataset] Skipped (empty) : {grand_skipped:,}\n"
             f"[AmexUIActionDataset] Loaded samples  : {loaded:,}"
-            + (f" (capped from {total - skipped:,})" if self.max_samples and loaded < total - skipped else "")
+            + (f" (capped from {grand_total - grand_skipped:,})" if self.max_samples and loaded < grand_total - grand_skipped else "")
         )
 
     # ------------------------------------------------------------------

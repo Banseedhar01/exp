@@ -62,13 +62,13 @@ class Config:
     amex_od_json: str = "./data/amex_od.json"
     amex_od_image_dir: str = "./data/amex_od_images"
 
-    amex_ui_action_json: str = "./data/amex_ui_action.json"
+    amex_ui_action_json: list = ["./data/amex_ui_action.json"]   # supports multiple JSON files
     amex_ui_action_image_dir: str = "./data/amex_ui_action_images"
 
     vqa_json: str = "./data/vqa.json"
     vqa_image_dir: str = "./data/vqa_images"
 
-    amex_purpose_json: str = "./data/amex_purpose.json"
+    amex_purpose_json: list = ["./data/amex_purpose.json"]       # supports multiple JSON files
     amex_purpose_image_dir: str = "./data/amex_purpose_images"
 
     amex_expectation_json: str = "./data/amex_expectation.json"
