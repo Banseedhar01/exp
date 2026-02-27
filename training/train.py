@@ -1,7 +1,7 @@
 """
 train.py — Florence-2 multi-GPU training script with multi-dataset support.
 
-Supports seven dataset types:
+Supports eight dataset types:
   - action            : existing ActionDataset  (CSV)
   - info              : existing InfoDataset    (CSV)
   - amex_od           : AMEX Object Detection   (JSON)
@@ -9,6 +9,7 @@ Supports seven dataset types:
   - vqa               : Visual Question Answering (JSON)
   - amex_purpose      : AMEX UI Purpose         (JSON)
   - amex_expectation  : AMEX UI Expectation     (JSON)
+  - layout_od         : Layout Object Detection  (JSON)
 
 Any combination can be enabled via CLI flags.  Datasets are concatenated and
 shuffled together via DistributedSampler so multi-task batches are well-mixed.
@@ -98,6 +99,7 @@ def parse_args():
     parser.add_argument("--use-vqa",              action="store_true", help="Enable VQA JSON dataset")
     parser.add_argument("--use-amex-purpose",     action="store_true", help="Enable AMEX UI Purpose JSON dataset")
     parser.add_argument("--use-amex-expectation", action="store_true", help="Enable AMEX UI Expectation JSON dataset")
+    parser.add_argument("--use-layout-od",         action="store_true", help="Enable Layout OD JSON dataset")
 
     # -- Dataset paths --
     parser.add_argument("--action-csv",    default=Config.commands_path,             help="Path to action CSV file")
@@ -113,6 +115,8 @@ def parse_args():
     parser.add_argument("--amex-purpose-images",   default=Config.amex_purpose_image_dir,    help="Image directory for AMEX Purpose dataset")
     parser.add_argument("--amex-expectation-json",   default=Config.amex_expectation_json,       help="Path to AMEX Expectation annotations JSON")
     parser.add_argument("--amex-expectation-images", default=Config.amex_expectation_image_dir,  help="Image directory for AMEX Expectation dataset")
+    parser.add_argument("--layout-od-json",           default=Config.layout_od_json,              help="Path to Layout OD annotations JSON")
+    parser.add_argument("--layout-od-images",         default=Config.layout_od_image_dir,         help="Image directory for Layout OD dataset")
 
     # -- Per-dataset sample caps --
     parser.add_argument("--max-action",          type=int, default=None, help="Max samples from ActionDataset (default: all)")
@@ -122,6 +126,7 @@ def parse_args():
     parser.add_argument("--max-vqa",             type=int, default=None, help="Max samples from VQA dataset (default: all)")
     parser.add_argument("--max-amex-purpose",    type=int, default=None, help="Max samples from AMEX Purpose dataset (default: all)")
     parser.add_argument("--max-amex-expectation",type=int, default=None, help="Max samples from AMEX Expectation dataset (default: all)")
+    parser.add_argument("--max-layout-od",        type=int, default=None, help="Max samples from Layout OD dataset (default: all)")
 
     # -- Test / debug --
     parser.add_argument("--test-mode",    action="store_true",              help="Enable test mode (small dataset slice)")
@@ -151,6 +156,7 @@ def apply_args_to_config(args):
     Config.USE_VQA                   = args.use_vqa
     Config.USE_AMEX_PURPOSE          = args.use_amex_purpose
     Config.USE_AMEX_EXPECTATION      = args.use_amex_expectation
+    Config.USE_LAYOUT_OD             = args.use_layout_od
     Config.commands_path             = args.action_csv
     Config.image_dir                 = args.action_images
     Config.info_path                 = args.info_csv
@@ -164,6 +170,8 @@ def apply_args_to_config(args):
     Config.amex_purpose_image_dir    = args.amex_purpose_images
     Config.amex_expectation_json        = args.amex_expectation_json
     Config.amex_expectation_image_dir   = args.amex_expectation_images
+    Config.layout_od_json               = args.layout_od_json
+    Config.layout_od_image_dir          = args.layout_od_images
     Config.MAX_ACTION                = args.max_action
     Config.MAX_INFO                  = args.max_info
     Config.MAX_AMEX_OD               = args.max_amex_od
@@ -171,6 +179,7 @@ def apply_args_to_config(args):
     Config.MAX_VQA                   = args.max_vqa
     Config.MAX_AMEX_PURPOSE          = args.max_amex_purpose
     Config.MAX_AMEX_EXPECTATION      = args.max_amex_expectation
+    Config.MAX_LAYOUT_OD             = args.max_layout_od
     Config.TEST_MODE                 = args.test_mode
     Config.TEST_SAMPLE_SIZE          = args.test_samples
     Config.VAL_SPLIT                 = args.val_split
@@ -405,11 +414,28 @@ def load_datasets(logger):
         counts["amex_expectation"] = len(raw)
         logger.info(f"[Loader] AMEX Expectation → {len(raw):,} samples")
 
+    # ---- Layout OD Dataset ---------------------------------------------------
+    if Config.USE_LAYOUT_OD:
+        from DataUtils.LayoutODDataset import LayoutODDataset
+        logger.info("[Loader] Loading Layout OD Dataset …")
+        ds = LayoutODDataset(
+            json_path=Config.layout_od_json,
+            image_dir=Config.layout_od_image_dir,
+            max_samples=Config.MAX_LAYOUT_OD,
+        )
+        raw = ds.getData()
+        if Config.TEST_MODE:
+            raw = raw[: Config.TEST_SAMPLE_SIZE]
+
+        datasets_with_loaders.append((raw, ds.load_image))
+        counts["layout_od"] = len(raw)
+        logger.info(f"[Loader] Layout OD        → {len(raw):,} samples")
+
     if not datasets_with_loaders:
         raise ValueError(
             "No datasets enabled! Use at least one of: "
             "--use-action, --use-info, --use-amex-od, --use-amex-ui, --use-vqa, "
-            "--use-amex-purpose, --use-amex-expectation"
+            "--use-amex-purpose, --use-amex-expectation, --use-layout-od"
         )
 
     mixed = MixedFlorenceDataset(datasets_with_loaders)
